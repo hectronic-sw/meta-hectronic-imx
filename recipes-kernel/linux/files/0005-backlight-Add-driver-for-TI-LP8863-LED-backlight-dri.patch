@@ -1,0 +1,503 @@
+From 5c79b7e811e40b7aa72bbbbdad1a0c3e72b616c9 Mon Sep 17 00:00:00 2001
+From: Peter Lundkvist <peter.lundkvist@hectronic.se>
+Date: Tue, 21 Oct 2025 11:24:37 +0200
+Subject: [PATCH 5/5] backlight: Add driver for TI LP8863 LED backlight driver
+Upstream-Status: Pending
+
+- Changes to build under 6.12
+---
+ drivers/video/backlight/Kconfig     |   6 +
+ drivers/video/backlight/Makefile    |   1 +
+ drivers/video/backlight/lp8863_bl.c | 451 ++++++++++++++++++++++++++++
+ 3 files changed, 458 insertions(+)
+ create mode 100644 drivers/video/backlight/lp8863_bl.c
+
+diff --git a/drivers/video/backlight/Kconfig b/drivers/video/backlight/Kconfig
+index 3614a5d29c71..05ce8e237178 100644
+--- a/drivers/video/backlight/Kconfig
++++ b/drivers/video/backlight/Kconfig
+@@ -409,6 +409,12 @@ config BACKLIGHT_LP8788
+ 	help
+ 	  This supports TI LP8788 backlight driver.
+ 
++config BACKLIGHT_LP8863
++	tristate "Backlight driver for TI LP8863"
++	depends on I2C
++	help
++	  This supports TI LP8863 backlight driver.
++
+ config BACKLIGHT_MP3309C
+ 	tristate "Backlight Driver for MPS MP3309C"
+ 	depends on I2C && PWM
+diff --git a/drivers/video/backlight/Makefile b/drivers/video/backlight/Makefile
+index 8fc98f760a8a..3568ca4def1c 100644
+--- a/drivers/video/backlight/Makefile
++++ b/drivers/video/backlight/Makefile
+@@ -43,6 +43,7 @@ obj-$(CONFIG_BACKLIGHT_LM3639)		+= lm3639_bl.o
+ obj-$(CONFIG_BACKLIGHT_LOCOMO)		+= locomolcd.o
+ obj-$(CONFIG_BACKLIGHT_LP855X)		+= lp855x_bl.o
+ obj-$(CONFIG_BACKLIGHT_LP8788)		+= lp8788_bl.o
++obj-$(CONFIG_BACKLIGHT_LP8863)		+= lp8863_bl.o
+ obj-$(CONFIG_BACKLIGHT_LV5207LP)	+= lv5207lp.o
+ obj-$(CONFIG_BACKLIGHT_MAX8925)		+= max8925_bl.o
+ obj-$(CONFIG_BACKLIGHT_MP3309C)		+= mp3309c.o
+diff --git a/drivers/video/backlight/lp8863_bl.c b/drivers/video/backlight/lp8863_bl.c
+new file mode 100644
+index 000000000000..19306459eddf
+--- /dev/null
++++ b/drivers/video/backlight/lp8863_bl.c
+@@ -0,0 +1,451 @@
++/**
++ * Driver for Texas Instruments LP8863 LED-backlight driver.
++ *
++ * Copyright (C) 2020, 2025 Hectronic AB
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#include <linux/module.h>
++#include <linux/debugfs.h>
++#include <linux/interrupt.h>
++#include <linux/i2c.h>
++#include <linux/backlight.h>
++
++#define LP8863_NAME	"lp8863-bl"
++
++#define DEFAULT_BL_NAME	"lcd-backlight"
++
++#define LP8863_MAX_VALUE	65535
++#define LP8863_MAX_BRIGHTNESS	100
++#define LP8863_DEFAULT_INIT_BRT	57 /* about 25 % of output power */
++#define DEF_HW_CURRENT_LIMIT	131 /* max current in mA from Riset */
++
++/* Temperature defaults */
++#define DEF_TEMPERATURE_LOW	90
++#define DEF_TEMPERATURE_HIGH	100
++#define DEF_HIGH_TEMP_MAX_BRT	65 /* about 35 % of output power */
++
++/* LP8863 Registers */
++#define LP8863_BL_MODE		0x20
++#define LP8863_DISP_BRT		0x28
++#define LP8863_USER_CONFIG1	0x40
++#define INTERRUPT_ENABLE_3	0x4e
++#define INTERRUPT_ENABLE_1	0x50
++#define INTERRUPT_ENABLE_2	0x52
++#define INTERRUPT_STATUS_1	0x54
++#define INTERRUPT_STATUS_2	0x56
++#define INTERRUPT_STATUS_3	0x58
++#define JUNCTION_TEMPERATURE	0xe8
++#define TEMPERATURE_LIMIT_HIGH	0xec
++#define TEMPERATURE_LIMIT_LOW	0xee
++#define BRT_DB_CONTROL		0x178
++#define LED0_CURRENT		0x1c2
++#define LED1_CURRENT		0x1c4
++#define LED2_CURRENT		0x1c6
++#define LED3_CURRENT		0x1c8
++#define LED4_CURRENT		0x1ca
++#define LED5_CURRENT		0x1cc
++#define FSM_DIAGNOSTICS		0x2a4
++#define PWM_INPUT_DIAGNOSTICS	0x2a6
++#define PWM_OUTPUT_DIAGNOSTICS	0x2a8
++#define LED_CURR_DIAGNOSTICS	0x2aa
++#define AUTO_DETECT_DIAGNOSTICS	0x2ae
++
++struct lp8863 {
++	struct i2c_client *i2c[4];
++	struct backlight_device *bl;
++	struct mutex lock;
++	struct dentry *debugfs;
++	int irq;
++	int htemp_max_brightness;
++	u32 temp_limit_low;
++	u32 temp_limit_high;
++	u32 hw_current_limit;
++	u32 max_current;
++	bool htemp;
++};
++
++static s32 lp8863_i2c_read_word(struct lp8863 *pdev, u16 reg)
++{
++	struct i2c_client *i2c = pdev->i2c[(reg >> 8) & 3];
++	s32 value = -EINVAL;
++
++	if (i2c)
++		value = i2c_smbus_read_word_data(i2c, reg & 0xff);
++	if (value < 0)
++		dev_err(&pdev->i2c[0]->dev, "Failed I2C read word\n");
++
++	return value;
++}
++
++static s32 lp8863_i2c_write_word(struct lp8863 *pdev, u16 reg, u16 value)
++{
++	struct i2c_client *i2c = pdev->i2c[(reg >> 8) & 3];
++	s32 retval = -EINVAL;
++
++	if (i2c)
++		retval = i2c_smbus_write_word_data(i2c, reg & 0xff, value);
++	if (retval < 0)
++		dev_err(&pdev->i2c[0]->dev, "Failed I2C write word\n");
++
++	return retval;
++}
++
++#define PWM_LUMINANCE_SHIFT	16
++#define PWM_LUMINANCE_SCALE	(1 << PWM_LUMINANCE_SHIFT) /* luminance scale */
++
++/*
++ * The CIE 1931 lightness formula should describe how we perceive light:
++ * Y = (L* / 903.3)           if L* ≤ 0.08856
++ * Y = ((L* + 16) / 116)^3    if L* > 0.08856
++ * (taken from pwm_bl.c)
++ */
++static u64 map_cie1931(unsigned int lightness)
++{
++	u64 retval;
++
++	lightness *= 100;
++	if (lightness <= (8 * PWM_LUMINANCE_SCALE)) {
++		retval = DIV_ROUND_CLOSEST(lightness * 10, 9033);
++	} else {
++		retval = (lightness + (16 * PWM_LUMINANCE_SCALE)) / 116;
++		retval *= retval * retval;
++		retval += 1ULL << (2*PWM_LUMINANCE_SHIFT - 1);
++		retval >>= 2*PWM_LUMINANCE_SHIFT;
++	}
++
++	return retval;
++}
++
++static void lp8863_set_backlight(struct lp8863 *pdev, int brightness)
++{
++	int value;
++
++	value = map_cie1931(DIV_ROUND_CLOSEST(brightness * PWM_LUMINANCE_SCALE,
++					      LP8863_MAX_BRIGHTNESS));
++	if (value > LP8863_MAX_VALUE)
++		value = LP8863_MAX_VALUE;
++	lp8863_i2c_write_word(pdev, LP8863_DISP_BRT, cpu_to_le16(value));
++}
++
++static void _lp8863_do_update_status(struct lp8863 *pdev, struct backlight_properties *props)
++{
++	bool enable = !backlight_is_blank(pdev->bl);
++	int brightness = props->brightness;
++
++	if (pdev->htemp && brightness > pdev->htemp_max_brightness)
++		brightness = pdev->htemp_max_brightness;
++	if (!enable)
++		brightness = 0;
++
++	lp8863_set_backlight(pdev, brightness);
++}
++
++static int lp8863_update_status(struct backlight_device *dev)
++{
++	struct backlight_properties *props = &dev->props;
++	struct lp8863 *pdev = bl_get_data(dev);
++
++	mutex_lock(&pdev->lock);
++
++	_lp8863_do_update_status(pdev, props);
++
++	mutex_unlock(&pdev->lock);
++
++	return 0;
++}
++
++static int lp8863_get_brightness(struct backlight_device *dev)
++{
++	struct backlight_properties *props = &dev->props;
++
++	return props->brightness;
++}
++
++static const struct backlight_ops bl_ops = {
++	.options = BL_CORE_SUSPENDRESUME,
++	.get_brightness	= lp8863_get_brightness,
++	.update_status	= lp8863_update_status,
++};
++
++static irqreturn_t lp8863_isr_func(int irq, void *devp)
++{
++	struct lp8863 *pdev = devp;
++	u16 intr_status;
++
++	/* Only expecting temperature monitor interrupts */
++	mutex_lock(&pdev->lock);
++
++	intr_status = le16_to_cpu(lp8863_i2c_read_word(pdev, INTERRUPT_STATUS_1));
++	if (intr_status & 0x2800) {
++		if (intr_status & 0x2000) {
++			pdev->htemp = true;
++			dev_info(&pdev->i2c[0]->dev, "Reduced max backlight to %d%%\n",
++				100 * pdev->htemp_max_brightness / LP8863_MAX_BRIGHTNESS);
++		} else if (intr_status & 0x0800) {
++			pdev->htemp = false;
++			dev_info(&pdev->i2c[0]->dev, "Restored max backlight to 100%%\n");
++		}
++
++		_lp8863_do_update_status(pdev, &pdev->bl->props);
++	}
++	lp8863_i2c_write_word(pdev, INTERRUPT_STATUS_1, cpu_to_le16(0x3c00));
++
++	mutex_unlock(&pdev->lock);
++
++	return IRQ_HANDLED;
++}
++
++static int lp8863_intr_config(struct lp8863 *pdev)
++{
++	int retval;
++
++	retval = request_threaded_irq(pdev->irq, NULL, lp8863_isr_func,
++				      IRQF_ONESHOT, "lp8863", pdev);
++	if (retval) {
++		dev_err(&pdev->i2c[0]->dev, "request threaded irq fail\n");
++		pdev->irq = 0;
++		return retval;
++	}
++	return 0;
++}
++
++static int temperature_show(struct seq_file *s, void *data)
++{
++	struct lp8863 *pdev = s->private;
++	int value;
++	u16 raw_value;
++
++	mutex_lock(&pdev->lock);
++	raw_value = le16_to_cpu(lp8863_i2c_read_word(pdev, JUNCTION_TEMPERATURE));
++	mutex_unlock(&pdev->lock);
++
++	if (raw_value >= 256)
++		value = raw_value- 512;
++	else
++		value = raw_value;
++	seq_printf(s, "%d\n", value);
++
++	return 0;
++}
++
++DEFINE_SHOW_ATTRIBUTE(temperature);
++
++static void lp8863_debugfs_init(struct lp8863 *pdev)
++{
++	pdev->debugfs = debugfs_create_dir(LP8863_NAME, NULL);
++
++	debugfs_create_file("temperature", 0600, pdev->debugfs, pdev,
++			    &temperature_fops);
++}
++
++static void lp8863_debugfs_remove(struct lp8863 *pdev)
++{
++	debugfs_remove_recursive(pdev->debugfs);
++	pdev->debugfs = NULL;
++}
++
++static int lp8863_probe(struct i2c_client *client)
++{
++	struct backlight_properties props;
++	struct lp8863 *pdev;
++	struct device_node *np = client->dev.of_node;
++	int control;
++	u16 ctrl_word, tmpval;
++	int i, ret = 0;
++	u32 val, def_brightness, init_power;
++	u32 led_current;
++
++	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
++		dev_err(&client->dev, "i2c functionality check fail\n");
++		return -EOPNOTSUPP;
++	}
++
++	pdev = devm_kzalloc(&client->dev, sizeof(struct lp8863),
++			    GFP_KERNEL);
++	if (!pdev)
++		return -ENOMEM;
++
++	i2c_set_clientdata(client, pdev);
++	pdev->i2c[0] = client;
++
++	control = lp8863_i2c_read_word(pdev, LP8863_BL_MODE);
++	if (control < 0) {
++		return control;
++	}
++
++	for (i = 1; i < 4; ++i) {
++		pdev->i2c[i] = devm_i2c_new_dummy_device(&client->dev,
++							 client->adapter,
++							 client->addr + i);
++		if (IS_ERR(pdev->i2c[i])) {
++			ret = PTR_ERR(pdev->i2c[i]);
++			pdev->i2c[i] = NULL;
++			dev_err(&client->dev, "I2C registration failed\n");
++			goto err_reg;
++		}
++	}
++
++	mutex_init(&pdev->lock);
++	pdev->irq = client->irq;
++
++	/* Read config values from DT */
++	pdev->htemp_max_brightness = DEF_HIGH_TEMP_MAX_BRT;
++	if (!of_property_read_u32(np, "high-temp-max-brt", &val)) {
++		pdev->htemp_max_brightness = val;
++	}
++
++	pdev->temp_limit_high = DEF_TEMPERATURE_HIGH;
++	if (!of_property_read_u32(np, "temp-limit-high", &val)) {
++		pdev->temp_limit_high = val;
++	}
++	pdev->temp_limit_low = DEF_TEMPERATURE_LOW;
++	if (!of_property_read_u32(np, "temp-limit-low", &val)) {
++		pdev->temp_limit_low = val;
++	}
++
++	def_brightness = LP8863_DEFAULT_INIT_BRT;
++	if (!of_property_read_u32(np, "default-brightness", &val)) {
++		def_brightness = val;
++	}
++
++	pdev->hw_current_limit = DEF_HW_CURRENT_LIMIT;
++	if (!of_property_read_u32(np, "hw-current-limit", &val)) {
++		pdev->hw_current_limit = val;
++	}
++
++	pdev->max_current = pdev->hw_current_limit;
++	if (!of_property_read_u32(np, "max-led-current", &val)) {
++		if (val <= pdev->hw_current_limit)
++			pdev->max_current = val;
++	}
++
++	led_current = (pdev->max_current * 4095) / pdev->hw_current_limit;
++	for (i = 0; i < 6; ++i) {
++		tmpval = le16_to_cpu(lp8863_i2c_read_word(pdev, LED0_CURRENT + i*2));
++		tmpval = (tmpval & ~0xfff) | (led_current & 0xfff);
++		lp8863_i2c_write_word(pdev, LED0_CURRENT + i*2, cpu_to_le16(tmpval));
++	}
++	/* Load LEDx_CURRENT */
++	lp8863_i2c_write_word(pdev, BRT_DB_CONTROL, cpu_to_le16(0x0001));
++
++	init_power = of_property_read_bool(np, "default-on");
++
++	memset(&props, 0, sizeof(struct backlight_properties));
++	props.type = BACKLIGHT_RAW;
++	props.max_brightness = LP8863_MAX_BRIGHTNESS;
++	pdev->bl = devm_backlight_device_register(&client->dev, DEFAULT_BL_NAME,
++						  &client->dev, pdev, &bl_ops,
++						  &props);
++	if (IS_ERR(pdev->bl)) {
++		ret = PTR_ERR(pdev->bl);
++		goto err_reg;
++	}
++
++	/* Disable unused interrupts */
++	lp8863_i2c_write_word(pdev, INTERRUPT_ENABLE_3, cpu_to_le16(0x1005)); /* 0x200a */
++	lp8863_i2c_write_word(pdev, INTERRUPT_ENABLE_1, cpu_to_le16(0x1c15)); /* 0xa02a */
++	lp8863_i2c_write_word(pdev, INTERRUPT_ENABLE_2, cpu_to_le16(0x0040)); /* 0x0080 */
++
++	/* Set temperature limits */
++	lp8863_i2c_write_word(pdev, TEMPERATURE_LIMIT_HIGH, cpu_to_le16(pdev->temp_limit_high));
++	lp8863_i2c_write_word(pdev, TEMPERATURE_LIMIT_LOW, cpu_to_le16(pdev->temp_limit_low));
++
++	/* Enable temperature monitor */
++	tmpval = le16_to_cpu(lp8863_i2c_read_word(pdev, LP8863_USER_CONFIG1));
++	tmpval |= 0x0200;
++	lp8863_i2c_write_word(pdev, LP8863_USER_CONFIG1, cpu_to_le16(tmpval));
++
++	lp8863_intr_config(pdev);
++
++	ctrl_word = le16_to_cpu(control);
++	if ((ctrl_word & 0x02) == 0) {
++		ctrl_word |= 0x2;
++		lp8863_i2c_write_word(pdev, LP8863_BL_MODE, cpu_to_le16(ctrl_word));
++	}
++
++	pdev->bl->props.brightness = def_brightness;
++	pdev->bl->props.power =
++		init_power ? BACKLIGHT_POWER_ON : BACKLIGHT_POWER_OFF;
++
++	lp8863_debugfs_init(pdev);
++
++	backlight_update_status(pdev->bl);
++
++	return 0;
++
++err_reg:
++	for (i = 3; i >= 1; --i) {
++		if (pdev->i2c[i])
++			i2c_unregister_device(pdev->i2c[i]);
++	}
++	if (pdev->irq) {
++		free_irq(pdev->irq, pdev);
++	}
++	pdev->bl = NULL;
++	return ret;
++}
++
++static void lp8863_remove(struct i2c_client *client)
++{
++	struct lp8863 *pdev = i2c_get_clientdata(client);
++	int i;
++
++	lp8863_debugfs_remove(pdev);
++
++	if (pdev->irq) {
++		free_irq(pdev->irq, pdev);
++	}
++	for (i = 3; i >= 1; --i) {
++		if (pdev->i2c[i])
++			i2c_unregister_device(pdev->i2c[i]);
++	}
++	pdev->bl = NULL;
++	mutex_destroy(&pdev->lock);
++}
++
++#ifdef CONFIG_PM_SLEEP
++static int lp8863_suspend(struct device *dev)
++{
++	struct lp8863 *pdev = dev_get_drvdata(dev);
++
++	lp8863_set_backlight(pdev, 0);
++
++	return 0;
++}
++
++static int lp8863_resume(struct device *dev)
++{
++	struct lp8863 *pdev = dev_get_drvdata(dev);
++
++	backlight_update_status(pdev->bl);
++	return 0;
++}
++#endif
++
++static SIMPLE_DEV_PM_OPS(lp8863_pm_ops, lp8863_suspend, lp8863_resume);
++
++static const struct of_device_id lp8863_match_table[] = {
++	{.compatible = "ti,lp8863-bl"},
++	{},
++};
++MODULE_DEVICE_TABLE(of, lp8863_match_table);
++
++static struct i2c_driver lp8863_driver = {
++	.driver = {
++		.name = LP8863_NAME,
++		.of_match_table = lp8863_match_table,
++		.pm = &lp8863_pm_ops,
++	},
++	.probe = lp8863_probe,
++	.remove = lp8863_remove,
++};
++
++module_i2c_driver(lp8863_driver);
++
++MODULE_AUTHOR("Peter Lundkvist");
++MODULE_LICENSE("GPL v2");
++MODULE_DESCRIPTION("Texas Instruments LP8863 Backlight Driver");
+-- 
+2.53.0
+

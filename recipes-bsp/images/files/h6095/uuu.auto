@@ -1,0 +1,25 @@
+uuu_version 1.5.165
+
+SDPS: boot -f imx-boot-sd.bin
+CFG: SDPV: -chip SPL1 -vid 0x1b67 -pid 0x4fff
+SDPV: delay 1000
+SDPV: write -f imx-boot-sd.bin -skipspl
+SDPV: jump
+#CFG: FB: -vid 0x1fc9 -pid 0x0152
+
+# Kernel
+FB: ucmd setenv fastboot_buffer 0x90400000
+FB: download -f Image
+
+# DTB
+FB: ucmd setenv fastboot_buffer 0x9c400000
+FB: download -f UBOOT_DTB_NAME
+
+# Rootfs
+FB: ucmd setenv fastboot_buffer 0x9c800000 
+FB: download -f rootfs.squashfs.u-boot
+
+FB: acmd source 0x9c600000
+FB: acmd setenv bootargs "console=ttyLP0,115200 root=/dev/ram"
+FB: acmd booti 0x90400000 0x9c800000 0x9c400000
+FB: done
