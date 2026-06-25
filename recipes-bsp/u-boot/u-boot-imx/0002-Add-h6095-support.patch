@@ -1,0 +1,2444 @@
+From e1e8b62c03a2c7a3f6efc1b463b69913fb862f0c Mon Sep 17 00:00:00 2001
+From: Jonas Antoni <jonas.antoni@hectronic.se>
+Date: Wed, 17 Jun 2026 14:38:13 +0200
+Subject: [PATCH 2/2] Add h6095 support
+Upstream-Status: Pending
+
+---
+ arch/arm/dts/h6095-smarc-dev-u-boot.dtsi |  125 +++
+ arch/arm/dts/h6095-smarc-dev.dts         |  325 ++++++
+ arch/arm/dts/h6095-smarc.dtsi            | 1150 ++++++++++++++++++++++
+ arch/arm/mach-imx/imx9/Kconfig           |   14 +
+ board/hectronic/h6095/Kconfig            |   12 +
+ board/hectronic/h6095/MAINTAINERS        |    6 +
+ board/hectronic/h6095/Makefile           |   12 +
+ board/hectronic/h6095/h6095.c            |  259 +++++
+ board/hectronic/h6095/h6095.env          |   28 +
+ board/hectronic/h6095/mmc.c              |   49 +
+ board/hectronic/h6095/spl.c              |   98 ++
+ configs/h6095_defconfig                  |  210 ++++
+ include/configs/h6095.h                  |   29 +
+ 13 files changed, 2317 insertions(+)
+ create mode 100644 arch/arm/dts/h6095-smarc-dev-u-boot.dtsi
+ create mode 100644 arch/arm/dts/h6095-smarc-dev.dts
+ create mode 100644 arch/arm/dts/h6095-smarc.dtsi
+ create mode 100644 board/hectronic/h6095/Kconfig
+ create mode 100644 board/hectronic/h6095/MAINTAINERS
+ create mode 100644 board/hectronic/h6095/Makefile
+ create mode 100644 board/hectronic/h6095/h6095.c
+ create mode 100644 board/hectronic/h6095/h6095.env
+ create mode 100644 board/hectronic/h6095/mmc.c
+ create mode 100644 board/hectronic/h6095/spl.c
+ create mode 100644 configs/h6095_defconfig
+ create mode 100644 include/configs/h6095.h
+
+diff --git a/arch/arm/dts/h6095-smarc-dev-u-boot.dtsi b/arch/arm/dts/h6095-smarc-dev-u-boot.dtsi
+new file mode 100644
+index 00000000000..5420370def3
+--- /dev/null
++++ b/arch/arm/dts/h6095-smarc-dev-u-boot.dtsi
+@@ -0,0 +1,125 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++
++/* Copyright 2026 Hectronic */
++
++/ {
++	sysinfo {
++		compatible = "toradex,sysinfo";
++	};
++
++	usbg2 {
++		compatible = "fsl,imx27-usb-gadget";
++		dr_mode = "peripheral";
++		chipidea,usb = <&usb2>;
++		bootph-pre-ram;
++	};
++};
++
++&gpio1 {
++	reg = <0 0x47400000 0 0x1000>, <0 0x47400040 0 0x40>;
++	bootph-pre-ram;
++};
++
++&lpi2c4 {
++	bootph-pre-ram;
++};
++
++&lpuart1 {
++	clocks = <&scmi_clk IMX95_CLK_LPUART1>, <&scmi_clk IMX95_CLK_LPUART1>;
++	clock-names = "ipg", "per";
++	bootph-pre-ram;
++};
++
++/* Conflict with JTAG interface */
++&lpuart5 {
++	status = "disabled";
++};
++
++&pinctrl_lpi2c4 {
++	bootph-pre-ram;
++};
++
++&pinctrl_lpi2c4_gpio {
++	bootph-pre-ram;
++};
++
++&pinctrl_uart1 {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc1 {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc1_200mhz {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc2 {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc2_200mhz {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc2_cd {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc2_pwr_en {
++	bootph-pre-ram;
++};
++
++&pinctrl_usdhc2_vsel {
++	bootph-pre-ram;
++};
++
++&reg_usdhc2_vmmc {
++	bootph-pre-ram;
++};
++
++&reg_usdhc2_vqmmc {
++	bootph-pre-ram;
++};
++
++&som_gpio_expander_0 {
++	bootph-pre-ram;
++};
++
++&som_gpio_expander_1 {
++	bootph-pre-ram;
++};
++
++&usb2 {
++	bootph-pre-ram;
++	/delete-property/power-domains;
++};
++
++&usb3 {
++	/delete-property/power-domains;
++};
++
++&usb3_dwc3 {
++	compatible = "fsl,imx95a-dwc3", "fsl,imx8mq-dwc3", "snps,dwc3";
++};
++
++&usbmisc {
++	bootph-pre-ram;
++};
++
++&usbphynop {
++	bootph-pre-ram;
++};
++
++&usdhc1 {
++	bootph-pre-ram;
++};
++
++&usdhc2 {
++	bootph-pre-ram;
++};
++
++&wdog3 {
++	status = "disabled";
++};
+diff --git a/arch/arm/dts/h6095-smarc-dev.dts b/arch/arm/dts/h6095-smarc-dev.dts
+new file mode 100644
+index 00000000000..e3390b087cc
+--- /dev/null
++++ b/arch/arm/dts/h6095-smarc-dev.dts
+@@ -0,0 +1,325 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/*
++ * Copyright 2025 Hectronic
++ * On carrier board
++ *
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/pwm/pwm.h>
++#include "h6095-smarc.dtsi"
++
++/ {
++	model = "Hectronic H6095 SMARC iMX95 on Toradex SMARC Development Board";
++	compatible = "toradex,smarc-imx95-dev",
++		     "toradex,smarc-imx95",
++		     "fsl,imx95";
++
++	aliases {
++	};
++
++	/* SMARC DP0 */
++	dp0_connector: dp0-connector {
++		compatible = "dp-connector";
++		label = "DP0";
++		type = "full-size";
++
++		port {
++			dp0_connector_in: endpoint {
++				remote-endpoint = <&sn65dsi86_out>;
++			};
++		};
++	};
++
++	reg_carrier_1p8v: regulator-carrier-1p8v {
++		compatible = "regulator-fixed";
++		regulator-max-microvolt = <1800000>;
++		regulator-min-microvolt = <1800000>;
++		regulator-name = "On-carrier 1V8";
++	};
++
++	sound {
++		compatible = "simple-audio-card";
++		simple-audio-card,bitclock-master = <&codec_dai>;
++		simple-audio-card,format = "i2s";
++		simple-audio-card,frame-master = <&codec_dai>;
++		simple-audio-card,mclk-fs = <256>;
++		simple-audio-card,name = "tdx-smarc-wm8904";
++		simple-audio-card,routing =
++			"Headphone Jack", "HPOUTL",
++			"Headphone Jack", "HPOUTR",
++			"IN2L", "Line In Jack",
++			"IN2R", "Line In Jack",
++			"Microphone Jack", "MICBIAS",
++			"IN1L", "Microphone Jack";
++		simple-audio-card,widgets =
++			"Microphone", "Microphone Jack",
++			"Headphone", "Headphone Jack",
++			"Line", "Line In Jack";
++
++		codec_dai: simple-audio-card,codec {
++			clocks = <&scmi_clk IMX95_CLK_SAI3>;
++			sound-dai = <&wm8904_1a>;
++		};
++
++		simple-audio-card,cpu {
++			sound-dai = <&sai3>;
++		};
++	};
++};
++
++&display_pixel_link {
++	status = "okay";
++};
++
++&displaymix_irqsteer {
++	status = "okay";
++};
++
++&dpu {
++	status = "okay";
++};
++
++/* SMARC GBE0 */
++&enetc_port0 {
++	status = "okay";
++};
++
++/* SMARC GBE1 */
++&enetc_port1 {
++	status = "okay";
++};
++
++/* SMARC CAN0 */
++&flexcan1 {
++	status = "okay";
++};
++
++/* SMARC CAN1 */
++&flexcan2 {
++	status = "okay";
++};
++
++&gpio2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gpio12>,
++		    <&pinctrl_gpio4>,
++		    <&pinctrl_gpio6>,
++		    <&pinctrl_gpio7>;
++};
++
++&gpio4 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gpio10>, <&pinctrl_gpio11>;
++};
++
++&gpio5 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gpio2>,
++		    <&pinctrl_gpio3>,
++		    <&pinctrl_gpio4>;
++};
++
++
++
++// [MB] I2C_CAM0 not connected
++
++
++/* SMARC I2C_CAM1 */
++&i2c_cam1 {
++	status = "okay";
++};
++
++/* SMARC I2C_GP */
++&lpi2c2 {
++	status = "okay";
++
++	wm8904_1a: audio-codec@1a {
++		compatible = "wlf,wm8904";
++		reg = <0x1a>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&pinctrl_sai3>, <&pinctrl_sai3_mclk>;
++		#sound-dai-cells = <0>;
++		clocks = <&scmi_clk IMX95_CLK_SAI3>;
++		clock-names = "mclk";
++		AVDD-supply = <&reg_carrier_1p8v>;
++		CPVDD-supply = <&reg_carrier_1p8v>;
++		DBVDD-supply = <&reg_carrier_1p8v>;
++		DCVDD-supply = <&reg_carrier_1p8v>;
++		MICVDD-supply = <&reg_carrier_1p8v>;
++	};
++
++	temperature-sensor@4f {
++		compatible = "ti,tmp1075";
++		reg = <0x4f>;
++	};
++
++	eeprom@57 {
++		compatible = "st,24c02";
++		reg = <0x57>;
++		pagesize = <16>;
++	};
++
++};
++
++/* SMARC I2C_PM */
++&lpi2c7 {
++	clock-frequency = <100000>;
++	status = "okay";
++
++	fan_controller: fan@18 {
++		compatible = "ti,amc6821";
++		reg = <0x18>;
++		#pwm-cells = <2>;
++
++		fan {
++			cooling-levels = <255>;
++			pwms = <&fan_controller 40000 PWM_POLARITY_INVERTED>;
++		};
++	};
++
++	/* Current measurement into module VCC */
++	hwmon@40 {
++		compatible = "ti,ina226";
++		reg = <0x40>;
++		shunt-resistor = <5000>;
++	};
++};
++
++/* SMARC I2C_LCD [MB] S139/I2C_LCD_CK?*/
++&lpi2c5 {
++	status = "okay";
++/* Below is from carrier board [MB] */
++	i2c-mux@70 {
++		compatible = "nxp,pca9543";
++		reg = <0x70>;
++		i2c-mux-idle-disconnect;
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		/* I2C on DSI Connector Pins 4/6 */
++		i2c_dsi_0: i2c@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++
++		/* I2C on DSI Connector Pins 52/54 */
++		i2c_dsi_1: i2c@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++		};
++	};
++};
++
++/* SMARC SPI0 */
++&lpspi6 {
++	status = "okay";
++};
++
++/* SMARC SER1, used as the Linux Console */
++&lpuart1 {
++	status = "okay";
++};
++
++/* SMARC SER0, RS485 */
++&lpuart2 {
++	linux,rs485-enabled-at-boot-time;
++	rs485-rts-active-low;
++	rs485-rx-during-tx;
++	status = "okay";
++};
++
++/* SMARC SER3, RS232 */
++&lpuart3 {
++	status = "okay";
++};
++
++/* SMARC SER2 */
++&lpuart6 {
++	status = "okay";
++};
++
++&mipi_dsi {
++	status = "okay";
++};
++
++/* SMARC MDIO, shared between all ethernet ports */
++&netc_emdio {
++	status = "okay";
++};
++
++/* SMARC PCIE_A / M2 Key B */
++&pcie0 {
++	status = "okay";
++};
++
++/* SMARC PCIE_B /  M2 Key E */
++&pcie1 {
++	status = "okay";
++};
++
++&pixel_interleaver {
++	#address-cells = <1>;
++	#size-cells = <0>;
++	status = "okay";
++
++	channel@0 {
++		reg = <0>;
++		status = "okay";
++	};
++};
++
++/* SMARC I2S0 */
++&sai3 {
++	status = "okay";
++};
++
++/* SMARC DP0 */
++&som_dsi2dp_bridge {
++	status = "okay";
++};
++
++&sn65dsi86_out {
++	remote-endpoint = <&dp0_connector_in>;
++};
++
++/* SMARC LCD0_BKLT_PWM */
++&tpm3 {
++	status = "okay";
++};
++
++/* SMARC LCD1_BKLT_PWM */
++&tpm4 {
++	status = "okay";
++};
++
++/* SMARC GPIO5 as PWM */
++&tpm5 {
++	status = "okay";
++};
++
++/* SMARC USB0 */
++&usb2 {
++	status = "okay";
++};
++
++/* SMARC USB1..4 [MB] do not exist?*/
++&usb3 {
++	status = "okay";
++};
++
++&usb3_dwc3 {
++	status = "okay";
++};
++
++&usb3_phy {
++	status = "okay";
++};
++
++/* SMARC SDIO [MB] Sdcard */
++&usdhc2 {
++	status = "okay";
++};
+diff --git a/arch/arm/dts/h6095-smarc.dtsi b/arch/arm/dts/h6095-smarc.dtsi
+new file mode 100644
+index 00000000000..11a7f67d29d
+--- /dev/null
++++ b/arch/arm/dts/h6095-smarc.dtsi
+@@ -0,0 +1,1150 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/*
++ * Copyright (C) 2025 Toradex
++ *
++ * https://www.toradex.com/computer-on-modules/smarc-arm-family/nxp-imx95
++ */
++
++#include <dt-bindings/input/input.h>
++//#include <dt-bindings/net/ti-dp83867.h>
++#include "imx95.dtsi"
++#include "imx95-u-boot.dtsi"
++
++/ {
++	aliases {
++		can0 = &flexcan1;
++		can1 = &flexcan2;
++		ethernet0 = &enetc_port0;
++		ethernet1 = &enetc_port1;
++		mmc0 = &usdhc1;
++		mmc1 = &usdhc2;
++		mmc2 = &usdhc3;
++		rtc0 = &rtc_i2c;
++		rtc1 = &scmi_bbm;
++		serial0 = &lpuart2;
++		serial1 = &lpuart1;
++		serial2 = &lpuart6;
++		serial3 = &lpuart3;
++	};
++
++	chosen {
++		stdout-path = "serial1:115200n8";
++	};
++
++	clk_dsi2dp_bridge: clock-dsi2dp-bridge {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <27000000>;
++	};
++
++	connector {
++		compatible = "gpio-usb-b-connector", "usb-b-connector";
++		/* SMARC P64 - USB0_OTG_ID */
++		id-gpios = <&som_gpio_expander_1 3 GPIO_ACTIVE_HIGH>;
++		label = "USB0";
++		self-powered;
++		type = "micro";
++		vbus-supply = <&reg_usb0_vbus>;
++
++		port {
++			usb_dr_connector: endpoint {
++				remote-endpoint = <&usb0_otg_id>;
++			};
++		};
++	};
++
++	gpio-keys {
++		compatible = "gpio-keys";
++
++		smarc_switch_lid: switch-lid {
++			gpios = <&som_gpio_expander_0 5 GPIO_ACTIVE_LOW>;
++			label = "LID_SMARC-";
++			linux,code = <SW_LID>;
++			linux,input-type = <EV_SW>;
++		};
++	};
++
++	reg_module_1p8v: regulator-module-1p8v {
++		compatible = "regulator-fixed";
++		regulator-max-microvolt = <1800000>;
++		regulator-min-microvolt = <1800000>;
++		regulator-name = "On-module +V1.8";
++	};
++
++	/* Non PMIC On-module Supplies */
++	reg_module_dp_1p2v: regulator-module-dp-1p2v {
++		compatible = "regulator-fixed";
++		regulator-max-microvolt = <1200000>;
++		regulator-min-microvolt = <1200000>;
++		regulator-name = "On-module +V1.2_DP";
++		vin-supply = <&reg_module_1p8v>;
++	};
++
++	reg_usb0_vbus: regulator-usb0-vbus {
++		compatible = "regulator-fixed";
++		/* SMARC P62 - USB0_EN_OC# */
++		gpios = <&som_gpio_expander_1 8 GPIO_ACTIVE_HIGH>; //[MB] ska gå ut via mux
++		enable-active-high;
++		regulator-name = "USB0_EN_OC#";
++	};
++
++	reg_usb1_vbus: regulator-usb1-vbus {
++		compatible = "regulator-fixed";
++		/* CTRL_V_BUS_USB_HUB or SMARC P71 - USB2_EN_OC# */
++		gpios = <&som_gpio_expander_1 10 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-name = "USB1_EN_OC#";
++	};
++
++	reg_usdhc2_vmmc: regulator-vmmc-usdhc2 {
++		compatible = "regulator-fixed";
++		pinctrl-names = "default";
++		pinctrl-0 = <&pinctrl_usdhc2_pwr_en>;
++		enable-active-high;
++		gpio = <&gpio3 7 GPIO_ACTIVE_HIGH>;
++		off-on-delay-us = <100000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-min-microvolt = <3300000>;
++		regulator-name = "SDIO_PWR_EN";
++		startup-delay-us = <20000>;
++	};
++
++	reg_usdhc2_vqmmc: regulator-usdhc2-vqmmc {
++		compatible = "regulator-gpio";
++		pinctrl-names = "default";
++		pinctrl-0 = <&pinctrl_usdhc2_vsel>;
++		gpios = <&gpio3 19 GPIO_ACTIVE_HIGH>;
++		regulator-max-microvolt = <3300000>;
++		regulator-min-microvolt = <1800000>;
++		states = <1800000 0x1>,
++			 <3300000 0x0>;
++		regulator-name = "PMIC_SD2_VSEL";
++	};
++
++	reg_wifi_en: regulator-wifi-en {
++		compatible = "regulator-fixed";
++		/* CTRL_EN_WIFI */
++		gpios = <&som_gpio_expander_1 7 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++		regulator-max-microvolt = <3300000>;
++		regulator-min-microvolt = <3300000>;
++		regulator-name = "CTRL_EN_WIFI";
++		startup-delay-us = <2000>;
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		linux_cma: linux,cma {
++			compatible = "shared-dma-pool";
++			reusable;
++			size = <0 0x3c000000>;
++			alloc-ranges = <0 0x80000000 0 0x7F000000>;
++			linux,cma-default;
++		};
++	};
++};
++
++/* SMARC GBE0 */
++&enetc_port0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_enetc0>, <&pinctrl_enetc0_1588_tmr>;
++	phy-handle = <&ethphy1>;
++	phy-mode = "rgmii-id";
++};
++
++/* SMARC GBE1 */
++&enetc_port1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_enetc1>, <&pinctrl_enetc1_1588_tmr>;
++	phy-handle = <&ethphy2>;
++	phy-mode = "rgmii-id";
++};
++
++/* SMARC CAN0 */
++&flexcan1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_flexcan1>;
++};
++
++/* SMARC CAN1 */
++&flexcan2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_flexcan2>;
++};
++
++&gpio1 {
++	gpio-line-names = "", /* 0 */
++			  "",
++			  "SMARC_I2C_GP_CK",
++			  "SMARC_I2C_GP_DAT",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_GPIO11",
++			  "", /* 10 */
++			  "",
++			  "",
++			  "",
++			  "CTRL_IO_EXP_INT_B";
++	status = "okay";
++};
++
++&gpio2 {
++	gpio-line-names = "SMARC_SPI0_CS0#", /* 0 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_GPIO5",
++			  "",
++			  "I2C_CAM_DAT",
++			  "I2C_CAM_CK",
++			  "SMARC_GPIO12", /* 10 */
++			  "SMARC_GPIO13",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_SPI1_CS0#",
++			  "",
++			  "", /* 20 */
++			  "",
++			  "SMARC_I2C_LCD_DAT",
++			  "SMARC_I2C_LCD_CK",
++			  "SMARC_SPI0_CS1#",
++			  "",
++			  "",
++			  "",
++			  "SMARC_I2C_PM_DAT",
++			  "SMARC_I2C_PM_CK",
++			  "I2C_SOM_DAT", /* 30 */
++			  "I2C_SOM_CK";
++	status = "okay";
++};
++
++&gpio3 {
++	gpio-line-names = "SMARC_SDIO_CD#", /* 0 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_SDIO_PWR_EN",
++			  "",
++			  "",
++			  "", /* 10 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "PMIC_SD2_VSEL";
++	status = "okay";
++};
++
++&gpio4 {
++	gpio-line-names = "", /* 0 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "", /* 10 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_GPIO10",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "", /* 20 */
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_SMB_ALERT#";
++	status = "okay";
++};
++
++&gpio5 {
++	gpio-line-names = "SMARC_GPIO2", /* 0 */
++			  "SMARC_GPIO3",
++			  "SMARC_GPIO4",
++			  "SMARC_GPIO6",
++			  "",
++			  "",
++			  "",
++			  "",
++			  "SMARC_GPIO9",
++			  "SMARC_GPIO7",
++			  "SMARC_GPIO8", /* 10 */
++			  "SMARC_SPI1_CS1#",
++			  "",
++			  "SPI1_TPM_CS#";
++	status = "okay";
++};
++
++/* SMARC I2C_GP */
++&lpi2c2 {
++	pinctrl-names = "default", "gpio";
++	pinctrl-0 = <&pinctrl_lpi2c2>;
++	pinctrl-1 = <&pinctrl_lpi2c2_gpio>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	clock-frequency = <400000>;
++	scl-gpios = <&gpio1 2 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	sda-gpios = <&gpio1 3 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	status = "okay";
++
++	eeprom@50 {
++		compatible = "st,24c32", "atmel,24c32";
++		reg = <0x50>;
++		pagesize = <32>;
++	};
++};
++
++
++/* I2C_PM */
++&lpi2c7 {
++	pinctrl-names = "default", "gpio";
++	pinctrl-0 = <&pinctrl_lpi2c7>, <&pinctrl_ctrl_io_exp_int_b>;
++	pinctrl-1 = <&pinctrl_lpi2c7_gpio>, <&pinctrl_ctrl_io_exp_int_b>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	clock-frequency = <400000>;
++	scl-gpios = <&gpio2 31 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	sda-gpios = <&gpio2 30 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	status = "okay";
++
++	som_gpio_expander_0: gpio@20 {
++		compatible = "nxp,pcal6416";
++		reg = <0x20>;
++		#interrupt-cells = <2>;
++		interrupt-controller;
++		interrupt-parent = <&gpio1>;
++		interrupts = <14 IRQ_TYPE_LEVEL_LOW>;
++		#gpio-cells = <2>;
++		gpio-controller;
++		gpio-line-names =
++			"SELECT_HDMI_LVDS-",
++			"BATLOW_+1.8V-",
++			"CHARGER_PRSNT_+1.8V-",
++			"CHARGING_+1.8V-",
++			"PF09_INT-",
++			"LID_SMARC-",
++			"GPIO8_SMARC",
++			"GPIO9_SMARC",
++			"LVDS0_BLKT_EN",
++			"LVDS0_BLKT_EN",
++			"VDS0_VDD_EN",
++			"LVDS1_VDD_EN",
++			"GPIO0_SMARC",
++			"GPIO1_SMARC",
++			"SD2_WP",
++			"MIPI_RST_+1.8V";
++	};
++
++	som_gpio_expander_1: gpio@21 {
++		compatible = "nxp,pcal6416";
++		reg = <0x21>;
++		#interrupt-cells = <2>;
++		interrupt-controller;
++		interrupt-parent = <&gpio1>;
++		interrupts = <14 IRQ_TYPE_LEVEL_LOW>;
++		#gpio-cells = <2>;
++		gpio-controller;
++		gpio-line-names =
++			"TP21_GPA0", /* 0 */
++			"GPA1",
++			"TP22_GPA2",
++			"USB1_ID_GPIO",
++			"RESET_GPIO",
++			"EMMC_RESET-",
++			"PCIE1_RST-",
++			"PCIE2_RST-",
++			"USB1_EN_OC-",
++			"HDMI_GPIO6_INT",
++			"USB2_EN_OC-", /* 10 */
++			"MIPI_IRQ",
++			"PCIE_WAKE_R-",
++			"MEM_STRAP0",
++			"MEM_STRAP1",
++			"MEM_STRAP2";
++	};
++
++	/* [MB] only with WIFI module */
++	som_gpio_expander_2: gpio@43 {
++		compatible = "nxp,pcal6408";
++		reg = <0x43>;
++		#interrupt-cells = <2>;
++		interrupt-controller;
++		interrupt-parent = <&gpio1>;
++		interrupts = <14 IRQ_TYPE_LEVEL_LOW>;
++		#gpio-cells = <2>;
++		gpio-controller;
++		gpio-line-names =
++			"MAYA_PD", /* 0 */
++			"WL_DEV_WAKE",
++			"BT_DEV_WAKE",
++			"WL_WAKE_HOST",
++			"BT_WAKE_HOST",
++			"WL_RST",
++			"BT_RST",
++			"SD_INT";
++	};
++
++	embedded-controller@19 {
++		compatible = "hectronic,h6095-ec", "hectronic,h6095-ec"; // PIC16F15255
++		reg = <0x19>;
++	};
++
++
++	rtc_i2c: rtc@68 {
++		compatible = "epson,pcal85263";
++		reg = <0x68>;
++	};
++
++	/* SMARC DP0 */
++	som_dsi2dp_bridge: bridge@2c {
++		compatible = "ti,sn65dsi86";
++		reg = <0x2c>;
++		clocks = <&clk_dsi2dp_bridge>;
++		clock-names = "refclk";
++		vcc-supply = <&reg_module_dp_1p2v>;
++		vcca-supply = <&reg_module_dp_1p2v>;
++		vccio-supply = <&reg_module_1p8v>;
++		vpll-supply = <&reg_module_1p8v>;
++		status = "disabled";
++
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			port@0 {
++				reg = <0>;
++				sn65dsi86_in: endpoint {
++					remote-endpoint = <&dsi0_out>;
++				};
++			};
++
++			port@1 {
++				reg = <1>;
++				sn65dsi86_out: endpoint {
++					data-lanes = <3 2 1 0>;
++				};
++			};
++		};
++	};
++};
++
++/* SMARC I2C_LCD */
++&lpi2c5 {
++	pinctrl-names = "default", "gpio";
++	pinctrl-0 = <&pinctrl_lpi2c5>;
++	pinctrl-1 = <&pinctrl_lpi2c5_gpio>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	clock-frequency = <100000>;
++	scl-gpios = <&gpio2 23 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	sda-gpios = <&gpio2 22 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++};
++
++/* I2C_CAM */
++&lpi2c8 {
++	pinctrl-names = "default", "gpio";
++	pinctrl-0 = <&pinctrl_lpi2c8>;
++	pinctrl-1 = <&pinctrl_lpi2c8_gpio>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	clock-frequency = <400000>;
++	scl-gpios = <&gpio2 11 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	sda-gpios = <&gpio2 10 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
++	status = "okay";
++
++	/* SMARC I2C_CAM1 */
++	i2c_cam1: i2c@1 {
++		reg = <1>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++	};
++
++};
++
++/* SMARC SPI1 */
++&lpspi4 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_lpspi4>;
++	cs-gpios = <&gpio2 18 GPIO_ACTIVE_LOW>,
++		   <&gpio5 11 GPIO_ACTIVE_LOW>,
++		   <&gpio5 13 GPIO_ACTIVE_LOW>;
++	status = "okay";
++
++	som_tpm: tpm@2 {
++		compatible = "infineon,slb9670", "tcg,tpm_tis-spi";
++		reg = <0x2>;
++		spi-max-frequency = <18500000>;
++	};
++};
++
++/* SMARC SPI0 */
++&lpspi6 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_lpspi6>;
++	cs-gpios = <&gpio2 0 GPIO_ACTIVE_LOW>,
++		   <&gpio2 24 GPIO_ACTIVE_LOW>;
++};
++
++/* SMARC SER1, used as the Linux Console */
++&lpuart1 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_uart1>;
++};
++
++/* SMARC SER0 */
++&lpuart2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_uart2>;
++	uart-has-rtscts;
++};
++
++/* SMARC SER3 */
++&lpuart3 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_uart3>;
++};
++
++/* On-module Bluetooth */
++&lpuart5 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_bt_uart>;
++	uart-has-rtscts;
++	status = "disabled";
++
++	som_bt: bluetooth {
++		compatible = "nxp,88w8987-bt";
++		fw-init-baudrate = <3000000>;
++	};
++};
++
++/* SMARC SER2 [MB] */
++&lpuart6 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_uart6>;
++	uart-has-rtscts;
++};
++
++&mipi_dsi {
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@1 {
++			reg = <1>;
++
++			dsi0_out: endpoint {
++				remote-endpoint = <&sn65dsi86_in>;
++			};
++		};
++	};
++};
++
++/* SMARC MDIO, shared between all ethernet ports */
++&netc_emdio {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_emdio>;
++
++	ethphy1: ethernet-phy@1 {
++		reg = <0>;
++		interrupt-parent = <&som_gpio_expander_1>;
++		interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
++	};
++
++	ethphy2: ethernet-phy@2 {
++		reg = <1>;
++	};
++};
++
++&netcmix_blk_ctrl {
++	status = "okay";
++};
++
++&netc_blk_ctrl {
++	status = "okay";
++};
++
++&netc_timer {
++	status = "okay";
++};
++
++/* SMARC PCIE_A */
++&pcie0 {
++	pinctrl-0 = <&pinctrl_pcie0>;
++	pinctrl-names = "default";
++	reset-gpios = <&som_gpio_expander_1 6 GPIO_ACTIVE_LOW>; // [MB] till mux PCIE1_RST-
++};
++
++/* SMARC PCIE_B */
++&pcie1 {
++	pinctrl-0 = <&pinctrl_pcie1>;
++	pinctrl-names = "default";
++	reset-gpios = <&som_gpio_expander_1 7 GPIO_ACTIVE_LOW>; // [MB] till mux PCIE2_RST-
++};
++
++/* SMARC I2S0 */
++&sai3 {
++	#sound-dai-cells = <0>;
++	assigned-clocks = <&scmi_clk IMX95_CLK_AUDIOPLL1_VCO>,
++			  <&scmi_clk IMX95_CLK_AUDIOPLL2_VCO>,
++			  <&scmi_clk IMX95_CLK_AUDIOPLL1>,
++			  <&scmi_clk IMX95_CLK_AUDIOPLL2>,
++			  <&scmi_clk IMX95_CLK_SAI3>;
++	assigned-clock-parents = <0>, <0>, <0>, <0>,
++				 <&scmi_clk IMX95_CLK_AUDIOPLL1>;
++	assigned-clock-rates = <3932160000>,
++			       <3612672000>, <393216000>,
++			       <361267200>, <12288000>;
++	fsl,sai-mclk-direction-output;
++};
++
++&scmi_bbm {
++	linux,code = <KEY_POWER>;
++};
++
++&thermal_zones {
++	/* PF09 Main PMIC */
++	pf09-thermal {
++		polling-delay = <2000>;
++		polling-delay-passive = <250>;
++		thermal-sensors = <&scmi_sensor 2>;
++
++		trips {
++			trip0 {
++				hysteresis = <2000>;
++				temperature = <155000>;
++				type = "critical";
++			};
++		};
++	};
++
++	/* PF53 VDD_ARM PMIC */
++	pf53-arm-thermal {
++		polling-delay = <2000>;
++		polling-delay-passive = <250>;
++		thermal-sensors = <&scmi_sensor 4>;
++
++		trips {
++			trip0 {
++				hysteresis = <2000>;
++				temperature = <155000>;
++				type = "critical";
++			};
++		};
++	};
++
++	/* PF53 VDD_SOC PMIC */
++	pf53-soc-thermal {
++		polling-delay = <2000>;
++		polling-delay-passive = <250>;
++		thermal-sensors = <&scmi_sensor 3>;
++
++		trips {
++			trip0 {
++				hysteresis = <2000>;
++				temperature = <155000>;
++				type = "critical";
++			};
++		};
++	};
++};
++
++/* SMARC GPIO5 as PWM */
++&tpm5 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_gpio5_pwm>;
++};
++
++/* SMARC USB0 [MB] fixme*/
++&usb2 {
++	adp-disable;
++	dr_mode = "otg"; // host?
++	hnp-disable;
++	srp-disable;
++	usb-role-switch;
++	vbus-supply = <&reg_usb0_vbus>;
++
++	port {
++		usb0_otg_id: endpoint {
++			remote-endpoint = <&usb_dr_connector>;
++		};
++	};
++};
++
++&usb3 {
++	fsl,disable-port-power-control;
++};
++
++/* SMARC USB1..4  */
++&usb3_dwc3 {
++	dr_mode = "host";
++};
++
++&usb3_phy {
++	vbus-supply = <&reg_usb1_vbus>;
++};
++
++/* On-module eMMC */
++&usdhc1 {
++	pinctrl-names = "default", "state_100mhz", "state_200mhz";
++	pinctrl-0 = <&pinctrl_usdhc1>;
++	pinctrl-1 = <&pinctrl_usdhc1>;
++	pinctrl-2 = <&pinctrl_usdhc1_200mhz>;
++	bus-width = <8>;
++	non-removable;
++	no-sdio;
++	no-sd;
++	status = "okay";
++};
++
++/* SMARC SDIO */
++&usdhc2 {
++	pinctrl-names = "default", "state_100mhz", "state_200mhz", "sleep";
++	pinctrl-0 = <&pinctrl_usdhc2>, <&pinctrl_usdhc2_cd>;
++	pinctrl-1 = <&pinctrl_usdhc2>, <&pinctrl_usdhc2_cd>;
++	pinctrl-2 = <&pinctrl_usdhc2_200mhz>,<&pinctrl_usdhc2_cd>;
++	pinctrl-3 = <&pinctrl_usdhc2_sleep>, <&pinctrl_usdhc2_cd>;
++	cd-gpios = <&gpio3 0 GPIO_ACTIVE_LOW>; // [MB] IMX95_PAD_SD2_CD_B__GPIO3_IO_BIT0 ????
++	vmmc-supply = <&reg_usdhc2_vmmc>;
++	vqmmc-supply = <&reg_usdhc2_vqmmc>;
++	wp-gpios = <&som_gpio_expander_1 14 GPIO_ACTIVE_HIGH>; // [MB] SD2_WP
++};
++
++/* On-module Wi-Fi */
++&usdhc3 {
++	pinctrl-names = "default", "state_100mhz", "state_200mhz";
++	pinctrl-0 = <&pinctrl_usdhc3>;
++	pinctrl-1 = <&pinctrl_usdhc3>;
++	pinctrl-2 = <&pinctrl_usdhc3_200mhz>;
++	keep-power-in-suspend;
++	non-removable;
++	vmmc-supply = <&reg_wifi_en>;
++	status = "disable"; // [MB] disable without wifi, make overlay depending on CCO.
++};
++
++&scmi_bbm {
++	linux,code = <KEY_POWER>;
++};
++
++&wdog3 {
++	fsl,ext-reset-output;
++	status = "okay";
++};
++
++&scmi_iomuxc {
++	/* On-module Bluetooth, UART pins shared with JTAG [MB] OK */
++	pinctrl_bt_uart: btuartgrp {
++		fsl,pins = <IMX95_PAD_DAP_TDO_TRACESWO__LPUART5_TX	0x31e>, /* WiFI_UART_R_RXD */
++			   <IMX95_PAD_DAP_TDI__LPUART5_RX		0x31e>, /* WiFI_UART_R_TXD */
++			   <IMX95_PAD_DAP_TCLK_SWCLK__LPUART5_CTS_B	0x31e>, /* WiFI_UART_R_RTS */
++			   <IMX95_PAD_DAP_TMS_SWDIO__LPUART5_RTS_B	0x31e>; /* WiFI_UART_R_CTS */
++	};
++
++	/* SMARC CAM_MCK */
++	pinctrl_cam_mck: cammckgrp {
++		fsl,pins = < IMX95_PAD_CCM_CLKO1__CCMSRCGPCMIX_TOP_CLKO_1	0x51e>; /* SMARC S6 - CAM_MCK */
++	};
++
++	pinctrl_ec_int: ecintgrp {
++		fsl,pins = < IMX95_PAD_SAI1_TXFS__AONMIX_TOP_GPIO1_IO_BIT11	0x31e>; /* SAI1_TXFS - EC_MCU_INT# */
++	};
++
++	/* SMARC MDIO, shared between all ethernet ports */
++	pinctrl_emdio: emdiogrp {
++		fsl,pins = <IMX95_PAD_ENET1_MDC__NETCMIX_TOP_NETC_MDC		0x50e>, /* Går inte ut på SMARC [MB] MDIO_CLK */
++			   <IMX95_PAD_ENET1_MDIO__NETCMIX_TOP_NETC_MDIO		0x90e>; /* Går inte ut på SMARC [MB] - MDIO_DAT */
++	};
++
++	/* SMARC GBE0 [MB OK] */
++	pinctrl_enetc0: enetc0grp {
++		fsl,pins = <IMX95_PAD_ENET1_TX_CTL__NETCMIX_TOP_ETH0_RGMII_TX_CTL   0x57e>, /* ENET1_TX_CTL */
++			   <IMX95_PAD_ENET1_TXC__NETCMIX_TOP_ETH0_RGMII_TX_CLK      0x58e>, /* ENET1_TXC    */
++			   <IMX95_PAD_ENET1_TD0__NETCMIX_TOP_ETH0_RGMII_TD0         0x50e>, /* ENET1_TDO    */
++			   <IMX95_PAD_ENET1_TD1__NETCMIX_TOP_ETH0_RGMII_TD1         0x50e>, /* ENET1_TD1    */
++			   <IMX95_PAD_ENET1_TD2__NETCMIX_TOP_ETH0_RGMII_TD2         0x50e>, /* ENET1_TD2    */
++			   <IMX95_PAD_ENET1_TD3__NETCMIX_TOP_ETH0_RGMII_TD3         0x50e>, /* ENET1_TD3    */
++			   <IMX95_PAD_ENET1_RX_CTL__NETCMIX_TOP_ETH0_RGMII_RX_CTL   0x57e>, /* ENET1_RX_CTL */
++			   <IMX95_PAD_ENET1_RXC__NETCMIX_TOP_ETH0_RGMII_RX_CLK      0x58e>, /* ENET1_RXC    */
++			   <IMX95_PAD_ENET1_RD0__NETCMIX_TOP_ETH0_RGMII_RD0         0x57e>, /* ENET1_RD0    */
++			   <IMX95_PAD_ENET1_RD1__NETCMIX_TOP_ETH0_RGMII_RD1         0x57e>, /* ENET1_RD1    */
++			   <IMX95_PAD_ENET1_RD2__NETCMIX_TOP_ETH0_RGMII_RD2         0x57e>, /* ENET1_RD2    */
++			   <IMX95_PAD_ENET1_RD3__NETCMIX_TOP_ETH0_RGMII_RD3         0x57e>; /* ENET1_RD3    */
++	};
++
++	/* SMARC GBE0_SDP */
++	pinctrl_enetc0_1588_tmr: enetc01588tmrgrp {
++		fsl,pins = <IMX95_PAD_CCM_CLKO2__NETCMIX_TOP_NETC_TMR_1588_PP1	0x51e>; /* SMARC P6 - GBE0_SDP */
++	};
++
++	/* SMARC GBE1 */
++	pinctrl_enetc1: enetc1grp {
++		fsl,pins = <IMX95_PAD_ENET2_TX_CTL__NETCMIX_TOP_ETH1_RGMII_TX_CTL   0x57e>, /* ENET2_TX_CTL */
++			   <IMX95_PAD_ENET2_TXC__NETCMIX_TOP_ETH1_RGMII_TX_CLK      0x58e>, /* ENET2_TXC    */
++			   <IMX95_PAD_ENET2_TD0__NETCMIX_TOP_ETH1_RGMII_TD0         0x50e>, /* ENET2_TD0    */
++			   <IMX95_PAD_ENET2_TD1__NETCMIX_TOP_ETH1_RGMII_TD1         0x50e>, /* ENET2_TD1    */
++			   <IMX95_PAD_ENET2_TD2__NETCMIX_TOP_ETH1_RGMII_TD2         0x50e>, /* ENET2_TD2    */
++			   <IMX95_PAD_ENET2_TD3__NETCMIX_TOP_ETH1_RGMII_TD3         0x50e>, /* ENET2_TD3    */
++			   <IMX95_PAD_ENET2_RX_CTL__NETCMIX_TOP_ETH1_RGMII_RX_CTL   0x57e>, /* ENET2_RX_CTL */
++			   <IMX95_PAD_ENET2_RXC__NETCMIX_TOP_ETH1_RGMII_RX_CLK      0x58e>, /* ENET2_RXC    */
++			   <IMX95_PAD_ENET2_RD0__NETCMIX_TOP_ETH1_RGMII_RD0         0x57e>, /* ENET2_RD0    */
++			   <IMX95_PAD_ENET2_RD1__NETCMIX_TOP_ETH1_RGMII_RD1         0x57e>, /* ENET2_RD1    */
++			   <IMX95_PAD_ENET2_RD2__NETCMIX_TOP_ETH1_RGMII_RD2         0x57e>, /* ENET2_RD2    */
++			   <IMX95_PAD_ENET2_RD3__NETCMIX_TOP_ETH1_RGMII_RD3         0x57e>; /* ENET2_RD3    */
++	};
++
++	/* SMARC GBE1_SDP */
++	pinctrl_enetc1_1588_tmr: enetc11588tmrgrp {
++		fsl,pins = < IMX95_PAD_CCM_CLKO4__NETCMIX_TOP_NETC_TMR_1588_PP2	0x51e>; /* SMARC P5 - GBE1_SDP */
++	};
++
++	/* SMARC CAN0 */
++	pinctrl_flexcan1: flexcan1grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO28__CAN3_TX	0x39e>, /* SMARC P143 - CAN0_TX [MB] SoC CAN3_TX*/
++			   <IMX95_PAD_GPIO_IO29__CAN3_RX	0x39e>; /* SMARC P144 - CAN0_RX [MB] Soc CAN3_RX*/
++	};
++
++	/* SMARC CAN1 */
++	pinctrl_flexcan2: flexcan2grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO25__CAN2_TX	0x39e>, /* SMARC P145 - CAN1_TX */
++			   <IMX95_PAD_GPIO_IO27__CAN2_RX	0x39e>; /* SMARC P146 - CAN1_RX */
++	};
++
++	/* SMARC GPIO2 */
++	pinctrl_gpio2: gpio2grp {
++		fsl,pins = <IMX95_PAD_XSPI1_DQS__GPIO5_IO_BIT8	0x31e>; /* SMARC P110 - GPIO2 */
++	};
++
++	/* SMARC GPIO3 */
++	pinctrl_gpio3: gpio3grp {
++		fsl,pins = <IMX95_PAD_XSPI1_DATA3__GPIO5_IO_BIT3  0x31e>; /* SMARC P111 - GPIO3 */
++	};
++
++	/* SMARC GPIO4 */
++	pinctrl_gpio4: gpio4grp {
++		fsl,pins = <IMX95_PAD_XSPI1_SCLK__GPIO5_IO_BIT9	0x31e>; /* SMARC P112 - GPIO4 */
++	};
++
++	/* SMARC GPIO5 */
++	pinctrl_gpio5: gpio5grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO06__GPIO2_IO_BIT6	0x31e>; /* SMARC P113 - GPIO5 */
++	};
++
++	/* SMARC GPIO5 as PWM */
++	pinctrl_gpio5_pwm: gpio5pwmgrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO06__GPIO2_IO_BIT6	0x11e>; /* SMARC P113 - PWM_OUT */
++	};
++
++	/* SMARC GPIO6 */
++	pinctrl_gpio6: gpio6grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO30__GPIO2_IO_BIT30	0x31e>; /* SMARC P114 - GPIO6 */
++	};
++
++	/* SMARC GPIO7 */
++	pinctrl_gpio7: gpio7grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO31__GPIO2_IO_BIT31 0x31e>; /* SMARC P115 - GPIO7 */
++	};
++
++	/* [MB] går till mux */
++	/* SMARC GPIO8 */
++
++	/* SMARC GPIO9 */
++	/* [MB] går till mux */
++
++	/* SMARC GPIO10 */
++	pinctrl_gpio10: gpio10grp {
++		fsl,pins = <IMX95_PAD_PDM_CLK__AONMIX_TOP_GPIO1_IO_BIT8	 0x31e>; /* SMARC P118 - GPIO10 */
++	};
++
++	/* SMARC GPIO11 */
++	pinctrl_gpio11: gpio11grp {
++		fsl,pins = <IMX95_PAD_PDM_BIT_STREAM0__AONMIX_TOP_GPIO1_IO_BIT9	 0x31e>; /* SMARC P119 - GPIO11 */
++	};
++
++	/* SMARC GPIO12 */
++	pinctrl_gpio12: gpio12grp {
++		fsl,pins = <IMX95_PAD_DAP_TCLK_SWCLK__GPIO3_IO_BIT30  0x31e>; /* SMARC S142 - GPIO12 */
++	};
++
++	/* SMARC GPIO13 */
++	/* [MB] Går till PIC istället för SMARC S123 - GPIO13 */
++
++	pinctrl_ctrl_io_exp_int_b: ioexpintgrp {
++		fsl,pins = <IMX95_PAD_SAI1_RXD0__AONMIX_TOP_GPIO1_IO_BIT14 0x31e>; /* CTRL_IO_EXP_INT_B */
++	};
++
++	/* SMARC LCD0_BKLT_PWM */
++	pinctrl_lcd0_bklt_pwm: lcd0bkltpwmgrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO12__TPM3_CH2	0x51e>; /* SMARC S141 - LCD0_BKLT_PWM */
++	};
++
++	/* SMARC LCD1_BKLT_PWM */
++	pinctrl_lcd1_bklt_pwm: lcd1bkltpwmgrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO13__TPM4_CH2	0x51e>; /* SMARC S122 - LCD1_BKLT_PWM */
++	};
++
++	/* SMARC I2C_GP */
++	pinctrl_lpi2c2: lpi2c2grp {
++		fsl,pins = <IMX95_PAD_I2C2_SCL__AONMIX_TOP_LPI2C2_SCL	0x40001b9e>, /* SMARC S48 - I2C_GP_CK  */
++			   <IMX95_PAD_I2C2_SDA__AONMIX_TOP_LPI2C2_SDA	0x40001b9e>; /* SMARC S49 - I2C_GP_DAT */
++	};
++
++	/* SMARC I2C_GP as GPIOs */
++	pinctrl_lpi2c2_gpio: lpi2c2gpiogrp {
++		fsl,pins = <IMX95_PAD_I2C2_SCL__AONMIX_TOP_GPIO1_IO_BIT2	0x40001b9e>, /* SMARC S48 - I2C_GP_CK  */
++			   <IMX95_PAD_I2C2_SDA__AONMIX_TOP_GPIO1_IO_BIT3	0x40001b9e>; /* SMARC S49 - I2C_GP_DAT */
++	};
++
++	/* SMARC I2C_PM  [MB] från i2c3 -> i2c7 */
++	pinctrl_lpi2c7: lpi2c7grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO08__LPI2C7_SDA     0x40001b9e>, /* SMARC P122 - I2C_PM_DAT */
++			   <IMX95_PAD_GPIO_IO09__LPI2C7_SCL     0x40001b9e>; /* SMARC P121 - I2C_PM_CK  */
++	};
++
++	/* SMARC I2C_PM as GPIOs */
++	pinctrl_lpi2c7_gpio: lpi2c7gpiogrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO08__GPIO2_IO_BIT8     0x40001b9e>, /* SMARC P122 - I2C_PM_DAT */
++			   <IMX95_PAD_GPIO_IO09__GPIO2_IO_BIT9     0x40001b9e>; /* SMARC P121 - I2C_PM_CK  */
++	};
++
++	/* I2C_SOM */
++	pinctrl_lpi2c4: lpi2c4grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO31__LPI2C4_SCL	0x40001b9e>, /* I2C_SOM_CK  */
++			   <IMX95_PAD_GPIO_IO30__LPI2C4_SDA	0x40001b9e>; /* I2C_SOM_DAT */
++	};
++
++	/* I2C_SOM as GPIOs */
++	pinctrl_lpi2c4_gpio: lpi2c4gpiogrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO31__GPIO2_IO_BIT31	0x40001b9e>, /* I2C_SOM_CK  */
++			   <IMX95_PAD_GPIO_IO30__GPIO2_IO_BIT30	0x40001b9e>; /* I2C_SOM_DAT */
++	};
++
++	/* SMARC I2C_LCD */
++	pinctrl_lpi2c5: lpi2c5grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO22__LPI2C5_SDA	0x40001b9e>, /* SMARC S140 - I2C_LCD_DAT */
++			   <IMX95_PAD_GPIO_IO23__LPI2C5_SCL	0x40001b9e>; /* SMARC S139 - I2C_LCD_CK  */
++	};
++
++	/* SMARC I2C_LCD as GPIOs */
++	pinctrl_lpi2c5_gpio: lpi2c5gpiogrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO22__GPIO2_IO_BIT22	0x40001b9e>, /* SMARC S140 - I2C_LCD_DAT */
++			   <IMX95_PAD_GPIO_IO23__GPIO2_IO_BIT23	0x40001b9e>; /* SMARC S139 - I2C_LCD_CK  */
++	};
++
++	/* I2C_CAM */
++	pinctrl_lpi2c8: lpi2c8grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO10__LPI2C8_SDA	0x40001b9e>, /* SMARC S2 - I2C_CAM1_DAT */
++			   <IMX95_PAD_GPIO_IO11__LPI2C8_SCL	0x40001b9e>; /* SMARC S1 - I2C_CAM1_CK  */
++	};
++
++	/* I2C_CAM as GPIOs */
++	pinctrl_lpi2c8_gpio: lpi2c8gpiogrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO10__GPIO2_IO_BIT10	0x40001b9e>, /* SMARC S2 - I2C_CAM1_DAT */
++			   <IMX95_PAD_GPIO_IO11__GPIO2_IO_BIT11	0x40001b9e>; /* SMARC S1 - I2C_CAM1_CK  */
++	};
++
++	/* SMARC SPI1 */
++	pinctrl_lpspi4: lpspi4grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO37__LPSPI4_SCK		0x3fe>, /* SMARC P56 - SPI1_CK   */
++			   <IMX95_PAD_GPIO_IO36__LPSPI4_SOUT		0x3fe>, /* SMARC P58 - SPI1_DO   */
++			   <IMX95_PAD_GPIO_IO19__LPSPI4_SIN		0x3fe>, /* SMARC P57 - SPI1_DIN  */
++			   <IMX95_PAD_GPIO_IO33__GPIO5_IO_BIT13		0x3fe>, /* SPI1_TPM_CS#          */
++			   <IMX95_PAD_GPIO_IO18__GPIO2_IO_BIT18		0x3fe>, /* SMARC P54 - SPI1_CS0# [MB] why not hardware chip select?*/
++			   <IMX95_PAD_XSPI1_SS1_B__GPIO5_IO_BIT11	0x3fe>; /* SMARC P55 - SPI1_CS1# [MB] why not hardware chip select?*/
++	};
++
++	/* SMARC SPI0 */
++	pinctrl_lpspi6: lpspi6grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO00__GPIO2_IO_BIT0		0x3fe>, /* SMARC P43 - SPI0_CS0#  [MB] inte hårdvaru CS? */
++			   <IMX95_PAD_GPIO_IO24__GPIO2_IO_BIT24		0x3fe>, /* SMARC P31 - SPI0_CS1# */
++			   <IMX95_PAD_GPIO_IO01__LPSPI6_SIN		0x3fe>, /* SMARC P45 - SPI0_DIN  */
++			   <IMX95_PAD_GPIO_IO02__LPSPI6_SOUT		0x3fe>, /* SMARC P46 - SPI0_DO   */
++			   <IMX95_PAD_GPIO_IO03__LPSPI6_SCK		0x3fe>; /* SMARC P44 - SPI0_CK   */
++	};
++
++	/* SMARC PCIE_A */
++	pinctrl_pcie0: pcie0grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO32__HSIOMIX_TOP_PCIE1_CLKREQ_B	0x40001b1e>; /* SMARC P78 - PCIE_A_CKREQ# */
++	};
++
++	/* SMARC PCIE_B */
++	pinctrl_pcie1: pcie1grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO35__HSIOMIX_TOP_PCIE2_CLKREQ_B	0x40001b1e>; /* SMARC P77 - PCIE_B_CKREQ# */
++	};
++
++	/* SMARC I2S0 */
++	pinctrl_sai3: sai3grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO17__SAI3_MCLK		0x11e>, /* SMARC S38 - I2S0_CK */
++			   <IMX95_PAD_GPIO_IO20__SAI3_RX_DATA_BIT0	0x11e>, /* SMARC S41 - I2S0_SDIN */
++			   <IMX95_PAD_GPIO_IO21__SAI3_TX_DATA_BIT0	0x11e>, /* SMARC S40 - I2S0_SDOUT */
++			   <IMX95_PAD_GPIO_IO26__SAI3_TX_SYNC		0x11e>; /* SMARC S39 - I2S0_LRCK */
++	};
++
++	/* SMARC AUDIO_MCK */
++	pinctrl_sai3_mclk: sai3mclkgrp {
++		fsl,pins = <IMX95_PAD_GPIO_IO16__SAI3_TX_BCLK	0x31e>; /* SMARC S42 - I2S0_CK */
++	};
++
++	/* SMARC I2S2 */
++	pinctrl_sai5: sai5grp {
++		fsl,pins = <IMX95_PAD_XSPI1_DATA6__SAI5_TX_BCLK		0x11e>, /* SMARC S53 - I2S2_CK */
++			   <IMX95_PAD_XSPI1_DATA4__SAI5_TX_DATA_BIT0	0x11e>, /* SMARC S51 - I2S2_SDOUT */
++			   <IMX95_PAD_XSPI1_DATA7__SAI5_RX_DATA_BIT0	0x11e>, /* SMARC S52 - I2S2_SDIN */
++			   <IMX95_PAD_XSPI1_DATA5__SAI5_TX_SYNC		0x11e>; /* SMARC S50 - I2S2_LRCK */
++	};
++
++	/* SMARC SMB_ALERT# */
++	pinctrl_smb_alert_gpio: smbalertgrp {
++		fsl,pins = <IMX95_PAD_CCM_CLKO3__GPIO4_IO_BIT28	0x31e>; /* SMARC P1 - SMB_ALERT# */
++	};
++
++	/* SMARC SER1, used as the Linux Console */
++	pinctrl_uart1: uart1grp {
++		fsl,pins = <IMX95_PAD_UART1_TXD__AONMIX_TOP_LPUART1_TX	0x31e>, /* SMARC P134 - SER1_TX */
++			   <IMX95_PAD_UART1_RXD__AONMIX_TOP_LPUART1_RX	0x31e>; /* SMARC P135 - SER1_RX */
++	};
++
++	/* SMARC SER0 */
++	pinctrl_uart2: uart2grp {
++		fsl,pins = <IMX95_PAD_SAI1_TXC__AONMIX_TOP_LPUART2_CTS_B	0x31e>, /* SMARC P132 - SER0_CTS# */
++			   <IMX95_PAD_SAI1_TXD0__AONMIX_TOP_LPUART2_RTS_B	0x31e>, /* SMARC P131 - SER0_RTS# */
++			   <IMX95_PAD_UART2_RXD__AONMIX_TOP_LPUART2_RX		0x31e>, /* SMARC P130 - SER0_RX   */
++			   <IMX95_PAD_UART2_TXD__AONMIX_TOP_LPUART2_TX		0x31e>; /* SMARC P129 - SER0_TX   */
++	};
++
++	/* SMARC SER3 */
++	pinctrl_uart3: uart3grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO14__LPUART3_TX	0x31e>, /* SMARC P140 - SER3_TX */
++			   <IMX95_PAD_GPIO_IO15__LPUART3_RX	0x31e>; /* SMARC P141 - SER3_RX */
++	};
++
++	/* SMARC SER2 [MB] */
++	pinctrl_uart6: uart6grp {
++		fsl,pins = <IMX95_PAD_GPIO_IO04__LPUART6_TX	0x31e>, /* SMARC P136 - SER2_TX */
++			   <IMX95_PAD_GPIO_IO05__LPUART6_RX	0x31e>, /* SMARC P137 - SER2_RX */
++			   <IMX95_PAD_GPIO_IO07__LPUART6_RTS_B	0x31e>, /* SMARC P138 - SER2_RTS */
++			   <IMX95_PAD_GPIO_IO34__LPUART6_CTS_B	0x31e>; /* SMARC P139 - SER2_RX */
++	};
++
++	/* On-module eMMC */
++	pinctrl_usdhc1: usdhc1grp {
++		fsl,pins = <IMX95_PAD_SD1_CLK__USDHC1_CLK        0x158e>, /* SD1_CLK    */
++			   <IMX95_PAD_SD1_CMD__USDHC1_CMD        0x138e>, /* SD1_CMD    */
++			   <IMX95_PAD_SD1_DATA0__USDHC1_DATA0    0x138e>, /* SD1_DATA0  */
++			   <IMX95_PAD_SD1_DATA1__USDHC1_DATA1    0x138e>, /* SD1_DATA1  */
++			   <IMX95_PAD_SD1_DATA2__USDHC1_DATA2    0x138e>, /* SD1_DATA2  */
++			   <IMX95_PAD_SD1_DATA3__USDHC1_DATA3    0x138e>, /* SD1_DATA3  */
++			   <IMX95_PAD_SD1_DATA4__USDHC1_DATA4    0x138e>, /* SD1_DATA4  */
++			   <IMX95_PAD_SD1_DATA5__USDHC1_DATA5    0x138e>, /* SD1_DATA5  */
++			   <IMX95_PAD_SD1_DATA6__USDHC1_DATA6    0x138e>, /* SD1_DATA6  */
++			   <IMX95_PAD_SD1_DATA7__USDHC1_DATA7    0x138e>, /* SD1_DATA7  */
++			   <IMX95_PAD_SD1_STROBE__USDHC1_STROBE  0x158e>; /* SD1_STROBE */
++	};
++
++	pinctrl_usdhc1_200mhz: usdhc1-200mhzgrp {
++		fsl,pins = <IMX95_PAD_SD1_CLK__USDHC1_CLK        0x15fe>, /* SD1_CLK    */
++			   <IMX95_PAD_SD1_CMD__USDHC1_CMD        0x13fe>, /* SD1_CMD    */
++			   <IMX95_PAD_SD1_DATA0__USDHC1_DATA0    0x13fe>, /* SD1_DATA0  */
++			   <IMX95_PAD_SD1_DATA1__USDHC1_DATA1    0x13fe>, /* SD1_DATA1  */
++			   <IMX95_PAD_SD1_DATA2__USDHC1_DATA2    0x13fe>, /* SD1_DATA2  */
++			   <IMX95_PAD_SD1_DATA3__USDHC1_DATA3    0x13fe>, /* SD1_DATA3  */
++			   <IMX95_PAD_SD1_DATA4__USDHC1_DATA4    0x13fe>, /* SD1_DATA4  */
++			   <IMX95_PAD_SD1_DATA5__USDHC1_DATA5    0x13fe>, /* SD1_DATA5  */
++			   <IMX95_PAD_SD1_DATA6__USDHC1_DATA6    0x13fe>, /* SD1_DATA6  */
++			   <IMX95_PAD_SD1_DATA7__USDHC1_DATA7    0x13fe>, /* SD1_DATA7  */
++			   <IMX95_PAD_SD1_STROBE__USDHC1_STROBE  0x15fe>; /* SD1_STROBE */
++	};
++
++	/* SMARC SDIO */
++	pinctrl_usdhc2: usdhc2grp {
++		fsl,pins = <IMX95_PAD_SD2_CLK__USDHC2_CLK		0x158e>, /* SMARC P36 - SDIO_CK  */
++			   <IMX95_PAD_SD2_CMD__USDHC2_CMD		0x138e>, /* SMARC P34 - SDIO_CMD */
++			   <IMX95_PAD_SD2_DATA0__USDHC2_DATA0		0x138e>, /* SMARC P39 - SDIO_D0  */
++			   <IMX95_PAD_SD2_DATA1__USDHC2_DATA1		0x138e>, /* SMARC P40 - SDIO_D1  */
++			   <IMX95_PAD_SD2_DATA2__USDHC2_DATA2		0x138e>, /* SMARC P41 - SDIO_D2  */
++			   <IMX95_PAD_SD2_DATA3__USDHC2_DATA3		0x138e>; /* SMARC P42 - SDIO_D3  */
++	};
++
++	/* SMARC SDIO */
++	pinctrl_usdhc2_200mhz: usdhc2-200mhzgrp {
++		fsl,pins = <IMX95_PAD_SD2_CLK__USDHC2_CLK		0x15fe>, /* SMARC P36 - SDIO_CK  */
++			   <IMX95_PAD_SD2_CMD__USDHC2_CMD		0x13fe>, /* SMARC P34 - SDIO_CMD */
++			   <IMX95_PAD_SD2_DATA0__USDHC2_DATA0		0x13fe>, /* SMARC P39 - SDIO_D0  */
++			   <IMX95_PAD_SD2_DATA1__USDHC2_DATA1		0x13fe>, /* SMARC P40 - SDIO_D1  */
++			   <IMX95_PAD_SD2_DATA2__USDHC2_DATA2		0x13fe>, /* SMARC P41 - SDIO_D2  */
++			   <IMX95_PAD_SD2_DATA3__USDHC2_DATA3		0x13fe>; /* SMARC P42 - SDIO_D3  */
++	};
++
++	/* SMARC SDIO */
++	pinctrl_usdhc2_sleep: usdhc2-sleepgrp {
++		fsl,pins = <IMX95_PAD_SD2_CLK__USDHC2_CLK		0x400>, /* SMARC P36 - SDIO_CK  */
++			   <IMX95_PAD_SD2_CMD__USDHC2_CMD		0x400>, /* SMARC P34 - SDIO_CMD */
++			   <IMX95_PAD_SD2_DATA0__USDHC2_DATA0		0x400>, /* SMARC P39 - SDIO_D0  */
++			   <IMX95_PAD_SD2_DATA1__USDHC2_DATA1		0x400>, /* SMARC P40 - SDIO_D1  */
++			   <IMX95_PAD_SD2_DATA2__USDHC2_DATA2		0x400>, /* SMARC P41 - SDIO_D2  */
++			   <IMX95_PAD_SD2_DATA3__USDHC2_DATA3		0x400>; /* SMARC P42 - SDIO_D3  */
++	};
++
++	/* SMARC SDIO_CD# */
++	pinctrl_usdhc2_cd: usdhc2-cdgrp {
++		fsl,pins = <IMX95_PAD_SD2_CD_B__GPIO3_IO_BIT0	0x1100>; /* SMARC P35 - SDIO_CD# */
++	};
++
++	/* SMARC SDIO_PWR_EN */
++	pinctrl_usdhc2_pwr_en: usdhc2-pwrengrp {
++		fsl,pins = <IMX95_PAD_SD2_RESET_B__GPIO3_IO_BIT7	0x11e>; /* SMARC P37 - SDIO_PWR_EN */
++	};
++
++	pinctrl_usdhc2_vsel: usdhc2-vselgrp {
++		fsl,pins = <IMX95_PAD_SD2_VSELECT__GPIO3_IO_BIT19	0x4>; /* PMIC_SD2_VSEL */
++	};
++
++	/* On-module Wi-Fi */
++	pinctrl_usdhc3: usdhc3grp {
++		fsl,pins = <IMX95_PAD_SD3_CLK__USDHC3_CLK	0x158e>, /* SD3_CLK   */
++			   <IMX95_PAD_SD3_CMD__USDHC3_CMD	0x138e>, /* SD3_CMD   */
++			   <IMX95_PAD_SD3_DATA0__USDHC3_DATA0	0x138e>, /* SD3_DATA0 */
++			   <IMX95_PAD_SD3_DATA1__USDHC3_DATA1	0x138e>, /* SD3_DATA1 */
++			   <IMX95_PAD_SD3_DATA2__USDHC3_DATA2	0x138e>, /* SD3_DATA2 */
++			   <IMX95_PAD_SD3_DATA3__USDHC3_DATA3	0x138e>; /* SD3_DATA3 */
++	};
++
++	/* On-module Wi-Fi */
++	pinctrl_usdhc3_200mhz: usdhc3-200mhzgrp {
++		fsl,pins = <IMX95_PAD_SD3_CLK__USDHC3_CLK	0x15fe>, /* SD3_CLK   */
++			   <IMX95_PAD_SD3_CMD__USDHC3_CMD	0x13fe>, /* SD3_CMD   */
++			   <IMX95_PAD_SD3_DATA0__USDHC3_DATA0	0x13fe>, /* SD3_DATA1 */
++			   <IMX95_PAD_SD3_DATA1__USDHC3_DATA1	0x13fe>, /* SD3_DATA2 */
++			   <IMX95_PAD_SD3_DATA2__USDHC3_DATA2	0x13fe>, /* SD3_DATA3 */
++			   <IMX95_PAD_SD3_DATA3__USDHC3_DATA3	0x13fe>; /* SD3_DATA4 */
++	};
++};
+diff --git a/arch/arm/mach-imx/imx9/Kconfig b/arch/arm/mach-imx/imx9/Kconfig
+index 608bfac935e..e7f37288f9b 100644
+--- a/arch/arm/mach-imx/imx9/Kconfig
++++ b/arch/arm/mach-imx/imx9/Kconfig
+@@ -237,6 +237,19 @@ config TARGET_IMX943_ORANGEBOX
+ 	imply BOOTSTD_BOOTCOMMAND
+ 	imply BOOTSTD_FULL
+ 
++config TARGET_H6095
++	bool "Support Hectronic H6095 SMARC iMX95"
++	select IMX95
++	# [MB] below might not be needed
++	imply BOOTSTD_BOOTCOMMAND
++	imply BOOTSTD_FULL
++	select CMD_REMOTEPROC
++	select REMOTEPROC_IMX
++	select REGMAP
++	select SYSCON
++	select IMX_SM_LMM
++	select IMX_SM_CPU
++
+ endchoice
+ 
+ source "board/freescale/imx91_evk/Kconfig"
+@@ -253,6 +266,7 @@ source "board/freescale/imx95_frdm/Kconfig"
+ source "board/toradex/verdin-imx95/Kconfig"
+ source "board/freescale/imx94_evk/Kconfig"
+ source "board/freescale/imx94_orangebox/Kconfig"
++source "board/hectronic/h6095/Kconfig"
+ 
+ endif
+ 
+diff --git a/board/hectronic/h6095/Kconfig b/board/hectronic/h6095/Kconfig
+new file mode 100644
+index 00000000000..d615042587b
+--- /dev/null
++++ b/board/hectronic/h6095/Kconfig
+@@ -0,0 +1,12 @@
++if TARGET_H6095
++
++config SYS_BOARD
++	default "h6095"
++
++config SYS_VENDOR
++	default "hectronic"
++
++config SYS_CONFIG_NAME
++	default "h6095"
++
++endif
+diff --git a/board/hectronic/h6095/MAINTAINERS b/board/hectronic/h6095/MAINTAINERS
+new file mode 100644
+index 00000000000..eaf064bd723
+--- /dev/null
++++ b/board/hectronic/h6095/MAINTAINERS
+@@ -0,0 +1,6 @@
++h6095
++M:	Mattias Bolin <mattias.bohlin@hectronic.se>
++S:	Maintained
++F:	board/hectronic/h6095/
++F:	include/configs/h6095.h
++F:	configs/h6095_defconfig
+diff --git a/board/hectronic/h6095/Makefile b/board/hectronic/h6095/Makefile
+new file mode 100644
+index 00000000000..610ec139cc9
+--- /dev/null
++++ b/board/hectronic/h6095/Makefile
+@@ -0,0 +1,12 @@
++#
++# Copyright 2025 NXP
++# Copyright (C) 2025 Hectronic
++# SPDX-License-Identifier:      GPL-2.0+
++#
++
++obj-y += h6095.o
++obj-y += mmc.o
++
++ifdef CONFIG_SPL_BUILD
++obj-y += spl.o
++endif
+diff --git a/board/hectronic/h6095/h6095.c b/board/hectronic/h6095/h6095.c
+new file mode 100644
+index 00000000000..d3aeef49e83
+--- /dev/null
++++ b/board/hectronic/h6095/h6095.c
+@@ -0,0 +1,259 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/* Copyright (C) 2025 Toradex */
++
++#include <../dts/upstream/src/arm64/freescale/imx95-power.h>
++#include <asm/arch/clock.h>
++#include <asm/arch/sys_proto.h>
++#include <asm/global_data.h>
++#include <asm/io.h>
++#include <dm/uclass.h>
++#include <dwc3-uboot.h>
++#include <fdt_support.h>
++#include <init.h>
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <scmi_protocols.h>
++#include <usb.h>
++
++#include <env.h>
++
++// [MB] remove this dependency
++//#include "../../toradex/common/tdx-cfg-block.h"
++
++DECLARE_GLOBAL_DATA_PTR;
++
++extern int board_fix_fdt_fuse(void *fdt);
++
++
++#ifdef CONFIG_USB_DWC3
++
++#define PHY_CTRL0			0xF0040
++#define PHY_CTRL0_REF_SSP_EN		BIT(2)
++#define PHY_CTRL0_FSEL_MASK		GENMASK(10, 5)
++#define PHY_CTRL0_FSEL_24M		0x2a
++#define PHY_CTRL0_FSEL_100M		0x27
++#define PHY_CTRL0_SSC_RANGE_MASK	GENMASK(23, 21)
++#define PHY_CTRL0_SSC_RANGE_4003PPM	(0x2 << 21)
++
++#define PHY_CTRL1			0xF0044
++#define PHY_CTRL1_RESET			BIT(0)
++#define PHY_CTRL1_COMMONONN		BIT(1)
++#define PHY_CTRL1_ATERESET		BIT(3)
++#define PHY_CTRL1_DCDENB		BIT(17)
++#define PHY_CTRL1_CHRGSEL		BIT(18)
++#define PHY_CTRL1_VDATSRCENB0		BIT(19)
++#define PHY_CTRL1_VDATDETENB0		BIT(20)
++
++#define PHY_CTRL2			0xF0048
++#define PHY_CTRL2_TXENABLEN0		BIT(8)
++#define PHY_CTRL2_OTG_DISABLE		BIT(9)
++
++#define PHY_CTRL6			0xF0058
++#define PHY_CTRL6_RXTERM_OVERRIDE_SEL	BIT(29)
++#define PHY_CTRL6_ALT_CLK_EN		BIT(1)
++#define PHY_CTRL6_ALT_CLK_SEL		BIT(0)
++
++static struct dwc3_device dwc3_device_data = {
++#ifdef CONFIG_XPL_BUILD
++	.maximum_speed = USB_SPEED_HIGH,
++#else
++	.maximum_speed = USB_SPEED_HIGH, // [MB] was USB_SPEED_SUPER
++#endif
++	.base = USB1_BASE_ADDR,
++	.dr_mode = USB_DR_MODE_PERIPHERAL,
++	.index = 0,
++	.power_down_scale = 2,
++};
++
++static void dwc3_nxp_usb_phy_init(struct dwc3_device *dwc3)
++{
++	u32 value;
++
++	/* USB3.0 PHY signal fsel for 24M ref */
++	value = readl(dwc3->base + PHY_CTRL0);
++	value &= ~PHY_CTRL0_FSEL_MASK;
++	value |= FIELD_PREP(PHY_CTRL0_FSEL_MASK, PHY_CTRL0_FSEL_24M);
++	writel(value, dwc3->base + PHY_CTRL0);
++
++	/* Disable alt_clk_en and use internal MPLL clocks */
++	value = readl(dwc3->base + PHY_CTRL6);
++	value &= ~(PHY_CTRL6_ALT_CLK_SEL | PHY_CTRL6_ALT_CLK_EN);
++	writel(value, dwc3->base + PHY_CTRL6);
++
++	value = readl(dwc3->base + PHY_CTRL1);
++	value &= ~(PHY_CTRL1_VDATSRCENB0 | PHY_CTRL1_VDATDETENB0);
++	value |= PHY_CTRL1_RESET | PHY_CTRL1_ATERESET;
++	writel(value, dwc3->base + PHY_CTRL1);
++
++	value = readl(dwc3->base + PHY_CTRL0);
++	value |= PHY_CTRL0_REF_SSP_EN;
++	writel(value, dwc3->base + PHY_CTRL0);
++
++	value = readl(dwc3->base + PHY_CTRL2);
++	value |= PHY_CTRL2_TXENABLEN0 | PHY_CTRL2_OTG_DISABLE;
++	writel(value, dwc3->base + PHY_CTRL2);
++
++	udelay(10);
++
++	value = readl(dwc3->base + PHY_CTRL1);
++	value &= ~(PHY_CTRL1_RESET | PHY_CTRL1_ATERESET);
++	writel(value, dwc3->base + PHY_CTRL1);
++}
++#endif
++
++static int imx9_scmi_power_domain_enable(u32 domain, bool enable)
++{
++	struct udevice *dev;
++	int ret;
++
++	ret = uclass_get_device_by_name(UCLASS_CLK, "protocol@14", &dev);
++	if (ret)
++		return ret;
++
++	return scmi_pwd_state_set(dev, 0, domain, enable ? 0 : BIT(30));
++}
++
++int board_usb_init(int index, enum usb_init_type init)
++{
++	int ret = 0;
++
++	if (index == 0 && init == USB_INIT_DEVICE) {
++		ret = imx9_scmi_power_domain_enable(IMX95_PD_HSIO_TOP, true);
++		if (ret) {
++			printf("SCMI_POWWER_STATE_SET Failed for USB\n");
++			return ret;
++		}
++
++#ifdef CONFIG_USB_DWC3
++		dwc3_nxp_usb_phy_init(&dwc3_device_data);
++#endif
++
++#ifdef CONFIG_USB_DWC3
++		return dwc3_uboot_init(&dwc3_device_data);
++#endif
++	} else if (index == 0 && init == USB_INIT_HOST) {
++		return ret;
++	}
++
++	return 0;
++}
++
++int board_usb_cleanup(int index, enum usb_init_type init)
++{
++	int ret = 0;
++	if (index == 0 && init == USB_INIT_DEVICE) {
++#ifdef CONFIG_USB_DWC3
++		dwc3_uboot_exit(index);
++#endif
++	} else if (index == 0 && init == USB_INIT_HOST) {
++	}
++
++	return ret;
++}
++
++
++
++static void netc_init(void)
++{
++	int ret;
++
++	ret = imx9_scmi_power_domain_enable(IMX95_PD_NETC, true);
++	if (ret) {
++		printf("%s: Failed to enable PD NETC for Ethernet: %d\n", __func__, ret);
++		return;
++	}
++
++	set_clk_netc(ENET_125MHZ);
++
++	pci_init();
++}
++
++int board_early_init_f(void)
++{
++	/* UART1: A55 */
++	init_uart_clk(0);
++	return 0;
++}
++
++
++
++static void select_dts_from_cco(void)
++{
++	char variant[32];
++	char *env_variant = env_get("variant");
++	bool is_wifi = false;
++
++	if (is_wifi)
++		{
++		strlcpy(&variant[0], "wifi", sizeof(variant));
++		printf("Has wifi");
++		}
++	else
++		{
++		strlcpy(&variant[0], "nonwifi", sizeof(variant));
++		printf("Has no wifi");
++		}
++
++	if (!env_variant || strcmp(variant, env_variant)) {
++		printf("Setting variant to %s\n", variant);
++		env_set("variant", variant);
++	}
++}
++
++int board_late_init(void)
++{
++	select_dts_from_cco();
++
++	return 0;
++}
++
++int board_init(void)
++{
++	int ret;
++
++	ret = imx9_scmi_power_domain_enable(IMX95_PD_HSIO_TOP, true);
++	if (ret) {
++		printf("%s: Failed to enable PD HSIO for USB: %d\n", __func__, ret);
++		return ret;
++	}
++
++	netc_init();
++
++	return 0;
++}
++
++void board_quiesce_devices(void)
++{
++	int ret = 0;
++
++	ret = imx9_scmi_power_domain_enable(IMX95_PD_HSIO_TOP, false);
++	if (ret)
++		printf("%s: Failed to disable PD HSIO for USB: %d\n", __func__, ret);
++
++	ret = imx9_scmi_power_domain_enable(IMX95_PD_NETC, false);
++	if (ret)
++		printf("%s: Failed to disable PD NETC for Ethernet: %d\n", __func__, ret);
++}
++
++int board_phys_sdram_size(phys_size_t *size)
++{
++	*size = PHYS_SDRAM_SIZE + PHYS_SDRAM_2_SIZE;
++
++	return 0;
++}
++
++#if IS_ENABLED(CONFIG_OF_BOARD_FIXUP)
++int board_fix_fdt(void *fdt)
++{
++	board_fix_fdt_fuse(fdt);
++
++	return 0;
++}
++#endif
++
++#if IS_ENABLED(CONFIG_OF_LIBFDT) && IS_ENABLED(CONFIG_OF_BOARD_SETUP)
++int ft_board_setup(void *blob, struct bd_info *bd)
++{
++	return 0;
++}
++#endif
+diff --git a/board/hectronic/h6095/h6095.env b/board/hectronic/h6095/h6095.env
+new file mode 100644
+index 00000000000..2674718f20b
+--- /dev/null
++++ b/board/hectronic/h6095/h6095.env
+@@ -0,0 +1,28 @@
++boot_targets=mmc0
++initrd_addr=0x93800000
++initrd_high=0xffffffffffffffff
++fdt_addr_r=0x93000000
++fdt_addr=0x93000000
++fdtovaddr=0x93200000
++kernel_addr_r=CONFIG_SYS_LOAD_ADDR
++loadaddr=CONFIG_SYS_LOAD_ADDR
++image=Image
++mmcdev=CONFIG_SYS_MMC_ENV_DEV
++mmcpart=1
++mmcroot=/dev/mmcblk0p2 rootwait rw
++console=ttyLP0,115200
++loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}
++loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr_r} ${fdtfile}
++bsp_bootcmd=run loadimage; run loadfdt; run loadoverlay; booti ${loadaddr} - ${fdt_addr_r}
++loadoverlays=\
++    if fatload mmc ${mmcdev}:${mmcpart} ${fdtovaddr} overlays.txt; then \
++        env import -t ${fdtovaddr} ${filesize}; \
++        fdt addr ${fdt_addr_r}; \
++        for ov in ${fdt_overlays}; do \
++            fatload mmc ${mmcdev}:${mmcpart} ${fdtovaddr} ${ov}; \
++            fdt resize ${filesize}; \
++            fdt apply ${fdtovaddr}; \
++        done; \
++    fi
++bootargs=console=ttyLP0,115200 root=/dev/mmcblk0p2 rootwait rw
++bsp_bootcmd=run loadimage; run loadfdt; run loadoverlays; booti ${loadaddr} - ${fdt_addr_r}
+diff --git a/board/hectronic/h6095/mmc.c b/board/hectronic/h6095/mmc.c
+new file mode 100644
+index 00000000000..42bb751bdf3
+--- /dev/null
++++ b/board/hectronic/h6095/mmc.c
+@@ -0,0 +1,49 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright 2016 Freescale Semiconductor, Inc.
++ * Copyright 2018-2022 NXP
++ */
++
++#include <command.h>
++#include <vsprintf.h>
++#include <asm/arch/sys_proto.h>
++#include <linux/errno.h>
++#include <asm/io.h>
++#include <stdbool.h>
++#include <mmc.h>
++#include <env.h>
++
++static int check_mmc_autodetect(void)
++{
++	char *autodetect_str = env_get("mmcautodetect");
++
++	if (autodetect_str && !strcmp(autodetect_str, "yes"))
++		return 1;
++
++	return 0;
++}
++
++/* provide a default implementation */
++__weak int mmc_map_to_kernel_blk(int dev_no)
++{
++	return dev_no;
++}
++
++void board_late_mmc_env_init(void)
++{
++	char cmd[32];
++	char mmcblk[32];
++	u32 dev_no = mmc_get_env_dev();
++
++	if (!check_mmc_autodetect())
++		return;
++
++	env_set_ulong("mmcdev", dev_no);
++
++	/* Set mmcblk env */
++	sprintf(mmcblk, "/dev/mmcblk%dp2 rootwait rw", mmc_map_to_kernel_blk(dev_no));
++	env_set("mmcroot", mmcblk);
++
++	sprintf(cmd, "mmc dev %d", dev_no);
++	run_command(cmd, 0);
++}
+diff --git a/board/hectronic/h6095/spl.c b/board/hectronic/h6095/spl.c
+new file mode 100644
+index 00000000000..a5d570bda6c
+--- /dev/null
++++ b/board/hectronic/h6095/spl.c
+@@ -0,0 +1,98 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright 2025 NXP
++ */
++
++#include <asm/arch/sys_proto.h>
++#include <asm/arch/clock.h>
++#include <asm/arch/mu.h>
++#include <asm/mach-imx/boot_mode.h>
++#include <asm/sections.h>
++#include <hang.h>
++#include <init.h>
++#include <spl.h>
++#include <asm/mach-imx/ele_api.h>
++#include <asm/gpio.h>
++#include <linux/delay.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++int spl_board_boot_device(enum boot_device boot_dev_spl)
++{
++	switch (boot_dev_spl) {
++	case SD1_BOOT:
++	case MMC1_BOOT:
++		return BOOT_DEVICE_MMC1;
++	case SD2_BOOT:
++	case MMC2_BOOT:
++		return BOOT_DEVICE_MMC2;
++	case USB_BOOT:
++		return BOOT_DEVICE_BOARD;
++	case QSPI_BOOT:
++		return BOOT_DEVICE_SPI;
++	default:
++		return BOOT_DEVICE_NONE;
++	}
++}
++
++void spl_board_init(void)
++{
++	int ret;
++
++	puts("Normal Boot\n");
++
++	ret = ele_start_rng();
++	if (ret)
++		printf("Fail to start RNG: %d\n", ret);
++}
++
++void board_init_f(ulong dummy)
++{
++	int ret;
++
++	/* Clear the BSS. */
++	memset(__bss_start, 0, __bss_end - __bss_start);
++
++	puts("[MB] board_init\n");
++
++
++#ifdef CONFIG_SPL_RECOVER_DATA_SECTION
++	if (IS_ENABLED(CONFIG_SPL_BUILD))
++		spl_save_restore_data();
++#endif
++
++	timer_init();
++
++	/* Need dm_init() to run before any SCMI calls can be made. */
++	spl_early_init();
++	puts("[MB] spl_early_init\n");
++
++	/* Need enable SCMI drivers and ELE driver before enabling console */
++	ret = imx9_probe_mu();
++	if (ret)
++		hang(); /* if MU not probed, nothing can output, just hang here */
++
++	arch_cpu_init();
++
++	board_early_init_f();
++
++	preloader_console_init();
++
++	debug("SOC: 0x%x\n", gd->arch.soc_rev);
++	debug("LC: 0x%x\n", gd->arch.lifecycle);
++
++	get_reset_reason(true, false);
++
++	disable_smmuv3();
++
++	/* Will set ARM freq to max rate */
++	clock_init_late();
++
++	board_init_r(NULL, 0);
++}
++
++#ifdef CONFIG_ANDROID_SUPPORT
++int board_get_emmc_id(void) {
++	return 0;
++}
++#endif
+diff --git a/configs/h6095_defconfig b/configs/h6095_defconfig
+new file mode 100644
+index 00000000000..ac83f16ee59
+--- /dev/null
++++ b/configs/h6095_defconfig
+@@ -0,0 +1,210 @@
++CONFIG_ARM=y
++CONFIG_ARCH_IMX9=y
++CONFIG_TEXT_BASE=0x90200000
++CONFIG_SYS_MALLOC_LEN=0x2000000
++CONFIG_SYS_MALLOC_F_LEN=0x10000
++CONFIG_SPL_GPIO=y
++CONFIG_SPL_LIBCOMMON_SUPPORT=y
++CONFIG_SPL_LIBGENERIC_SUPPORT=y
++CONFIG_NR_DRAM_BANKS=3
++CONFIG_ENV_SIZE=0x4000
++CONFIG_ENV_OFFSET=0x700000
++CONFIG_DM_GPIO=y
++CONFIG_DEFAULT_DEVICE_TREE="h6095-smarc-dev"
++CONFIG_TARGET_H6095=y
++CONFIG_OF_LIBFDT_OVERLAY=y
++CONFIG_SYS_MONITOR_LEN=524288
++CONFIG_SPL_MMC=y
++CONFIG_SPL_SERIAL=y
++CONFIG_SPL_DRIVERS_MISC=y
++CONFIG_SPL_STACK=0x204d6000
++CONFIG_SPL_TEXT_BASE=0x20480000
++CONFIG_SPL_HAS_BSS_LINKER_SECTION=y
++CONFIG_SPL_BSS_START_ADDR=0x204d6000
++CONFIG_SPL_BSS_MAX_SIZE=0x2000
++CONFIG_SYS_LOAD_ADDR=0x90400000
++CONFIG_WATCHDOG_TIMEOUT_MSECS=30000
++CONFIG_SPL=y
++CONFIG_SPL_RECOVER_DATA_SECTION=y
++CONFIG_ELE_SHARED_BUFFER=0x98000000
++CONFIG_PCI=y
++CONFIG_OF_BOARD_FIXUP=y
++CONFIG_SYS_MEMTEST_START=0x90000000
++CONFIG_SYS_MEMTEST_END=0xA0000000
++CONFIG_REMAKE_ELF=y
++# CONFIG_EFI_LOADER is not set
++CONFIG_FIT=y
++CONFIG_FIT_VERBOSE=y
++CONFIG_BOOTDELAY=1
++CONFIG_OF_BOARD_SETUP=y
++CONFIG_OF_SYSTEM_SETUP=y
++CONFIG_BOOTCOMMAND="bootflow scan -b; run bsp_bootcmd"
++CONFIG_USE_PREBOOT=y
++CONFIG_PREBOOT="test -n ${fdtfile} || setenv fdtfile imx95-h6095.dtb"
++CONFIG_SYS_CBSIZE=2048
++CONFIG_SYS_PBSIZE=2074
++CONFIG_ARCH_MISC_INIT=y
++CONFIG_BOARD_EARLY_INIT_F=y
++CONFIG_BOARD_LATE_INIT=y
++CONFIG_LAST_STAGE_INIT=y
++CONFIG_SPL_MAX_SIZE=0x30000
++CONFIG_SPL_BOARD_INIT=y
++CONFIG_SPL_LOAD_IMX_CONTAINER=y
++CONFIG_IMX_CONTAINER_CFG="arch/arm/mach-imx/imx9/scmi/container.cfg"
++# CONFIG_SPL_SHARES_INIT_SP_ADDR is not set
++CONFIG_SPL_SYS_MALLOC=y
++CONFIG_SPL_HAS_CUSTOM_MALLOC_START=y
++CONFIG_SPL_CUSTOM_SYS_MALLOC_ADDR=0x93200000
++CONFIG_SPL_SYS_MALLOC_SIZE=0x80000
++CONFIG_SPL_SYS_MMCSD_RAW_MODE=y
++CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x1040
++CONFIG_SPL_I2C=y
++CONFIG_SPL_DM_MAILBOX=y
++CONFIG_SPL_POWER_DOMAIN=y
++CONFIG_SPL_THERMAL=y
++CONFIG_SPL_WATCHDOG=y
++CONFIG_SYS_PROMPT="h6095# "
++CONFIG_CMD_ERASEENV=y
++CONFIG_CRC32_VERIFY=y
++CONFIG_CMD_MEMTEST=y
++CONFIG_CMD_CLK=y
++CONFIG_CMD_FUSE=y
++CONFIG_CMD_GPIO=y
++CONFIG_CMD_I2C=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_OPTEE_RPMB=y
++CONFIG_CMD_OPTEE=y
++CONFIG_CMD_PCI=y
++CONFIG_CMD_POWEROFF=y
++CONFIG_CMD_USB=y
++CONFIG_CMD_USB_SDP=y
++CONFIG_CMD_USB_MASS_STORAGE=y
++CONFIG_CMD_SNTP=y
++CONFIG_CMD_CACHE=y
++CONFIG_CMD_CLS=y
++CONFIG_CMD_RTC=y
++CONFIG_CMD_TIME=y
++CONFIG_CMD_GETTIME=y
++CONFIG_CMD_TIMER=y
++CONFIG_CMD_REGULATOR=y
++CONFIG_CMD_HASH=y
++CONFIG_CMD_EXT4_WRITE=y
++CONFIG_OF_CONTROL=y
++CONFIG_SPL_OF_CONTROL=y
++CONFIG_ENV_OVERWRITE=y
++CONFIG_ENV_IS_NOWHERE=y
++CONFIG_ENV_IS_IN_MMC=y
++CONFIG_SYS_RELOC_GD_ENV_ADDR=y
++CONFIG_SYS_MMC_ENV_DEV=0
++CONFIG_USE_ETHPRIME=y
++CONFIG_ETHPRIME="eth0"
++# CONFIG_BOOTDEV_ETH is not set
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_TFTP_BLOCKSIZE=4096
++CONFIG_SYS_RX_ETH_BUFFER=8
++CONFIG_SPL_DM=y
++CONFIG_SPL_DM_SEQ_ALIAS=y
++CONFIG_SPL_OF_TRANSLATE=y
++CONFIG_SPL_CLK=y
++CONFIG_SPL_CLK_CCF=y
++CONFIG_CLK_SCMI=y
++CONFIG_SPL_CLK_SCMI=y
++CONFIG_CLK_IMX95_BLKCTRL=y
++CONFIG_SAVED_QB_STATE_BASE=0x4aaf0000
++CONFIG_IMX_SNPS_DDR_PHY_QB_GEN=y
++CONFIG_USB_FUNCTION_FASTBOOT=y
++CONFIG_FASTBOOT_BUF_ADDR=0x90400000
++CONFIG_FASTBOOT_BUF_SIZE=0x20000000
++CONFIG_FASTBOOT_FLASH=y
++CONFIG_FASTBOOT_UUU_SUPPORT=y
++CONFIG_SPL_FIRMWARE=y
++# CONFIG_SCMI_AGENT_SMCCC is not set
++# CONFIG_SCMI_AGENT_OPTEE is not set
++CONFIG_GPIO_HOG=y
++CONFIG_DM_GPIO_LOOKUP_LABEL=y
++CONFIG_SPL_DM_GPIO_LOOKUP_LABEL=y
++CONFIG_IMX_RGPIO2P=y
++CONFIG_DM_PCA953X=y
++CONFIG_SPL_DM_PCA953X=y
++CONFIG_DM_I2C=y
++CONFIG_SYS_I2C_IMX_LPI2C=y
++CONFIG_IMX_MU_MBOX=y
++CONFIG_SUPPORT_EMMC_RPMB=y
++CONFIG_SUPPORT_EMMC_BOOT=y
++CONFIG_MMC_IO_VOLTAGE=y
++CONFIG_MMC_UHS_SUPPORT=y
++CONFIG_MMC_HS400_ES_SUPPORT=y
++CONFIG_MMC_HS400_SUPPORT=y
++CONFIG_FSL_USDHC=y
++CONFIG_MTD=y
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH_SFDP_SUPPORT=y
++CONFIG_SPI_FLASH_SOFT_RESET=y
++CONFIG_SPI_FLASH_SOFT_RESET_ON_BOOT=y
++CONFIG_SPI_FLASH_STMICRO=y
++CONFIG_SPI_FLASH_MT35XU=y
++CONFIG_MULTIPLEXER=y
++CONFIG_MUX_MMIO=y
++CONFIG_PHYLIB=y
++CONFIG_PHY_AQUANTIA=y
++CONFIG_PHY_MXL8611X=y
++CONFIG_PHY_REALTEK=y
++CONFIG_PHY_FIXED=y
++CONFIG_DM_MDIO=y
++CONFIG_DM_DSA=y
++CONFIG_KSZ9477=y
++CONFIG_RGMII=y
++CONFIG_MII=y
++CONFIG_FSL_ENETC=y
++CONFIG_PCIE_ECAM_GENERIC=y
++CONFIG_PHY_IMX8MQ_USB=y
++CONFIG_PINCTRL=y
++CONFIG_SPL_PINCTRL=y
++CONFIG_PINCTRL_IMX_SCMI=y
++CONFIG_POWER_DOMAIN=y
++CONFIG_SCMI_POWER_DOMAIN=y
++CONFIG_DM_REGULATOR=y
++CONFIG_SPL_DM_REGULATOR=y
++CONFIG_DM_REGULATOR_FIXED=y
++CONFIG_SPL_DM_REGULATOR_FIXED=y
++CONFIG_DM_REGULATOR_GPIO=y
++CONFIG_DM_RNG=y
++CONFIG_IMX_ELE_RNG=y
++CONFIG_DM_RTC=y
++CONFIG_RTC_EMULATION=y
++CONFIG_DM_SERIAL=y
++CONFIG_FSL_LPUART=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_NXP_FSPI=y
++CONFIG_SYSRESET=y
++CONFIG_SYSRESET_CMD_POWEROFF=y
++CONFIG_SYSRESET_PSCI=y
++CONFIG_TEE=y
++CONFIG_OPTEE=y
++CONFIG_DM_THERMAL=y
++CONFIG_SCMI_THERMAL=y
++CONFIG_USB=y
++CONFIG_USB_XHCI_HCD=y
++CONFIG_USB_XHCI_DWC3=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_DWC3=y
++CONFIG_USB_HOST_ETHER=y
++CONFIG_USB_ETHER_ASIX=y
++CONFIG_USB_ETHER_RTL8152=y
++CONFIG_USB_GADGET=y
++CONFIG_SPL_USB_GADGET=y
++CONFIG_USB_GADGET_MANUFACTURER="FSL"
++CONFIG_USB_GADGET_VENDOR_NUM=0x1fc9
++CONFIG_USB_GADGET_PRODUCT_NUM=0x0152
++CONFIG_SDP_LOADADDR=0x90400000
++CONFIG_SPL_USB_SDP_SUPPORT=y
++CONFIG_ULP_WATCHDOG=y
++CONFIG_RSA=y
++CONFIG_RSA_VERIFY_WITH_PKEY=y
++CONFIG_X509_CERTIFICATE_PARSER=y
++CONFIG_PKCS7_MESSAGE_PARSER=y
++CONFIG_LZO=y
++CONFIG_BZIP2=y
++CONFIG_HEXDUMP=y
++CONFIG_TOOLS_MKEFICAPSULE=y
+diff --git a/include/configs/h6095.h b/include/configs/h6095.h
+new file mode 100644
+index 00000000000..bfccb888e52
+--- /dev/null
++++ b/include/configs/h6095.h
+@@ -0,0 +1,29 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright 2025 NXP
++ */
++#ifndef __H6095_H
++#define __H6095_H
++
++#include <linux/sizes.h>
++#include <asm/arch/imx-regs.h>
++
++/* module has 8GB, 2GB from 0x80000000..0xffffffff, 6GB above */
++#define SZ_6G	_AC(0x180000000, ULL)
++
++/* first 256MB reserved for firmware */
++#define CFG_SYS_INIT_RAM_ADDR	0x90000000
++#define CFG_SYS_INIT_RAM_SIZE	SZ_2M
++
++#define CFG_SYS_SDRAM_BASE	0x90000000
++#define PHYS_SDRAM		0x90000000
++
++#define PHYS_SDRAM_SIZE		(SZ_2G - SZ_256M) /* 2GB - 256MB DDR */
++#define PHYS_SDRAM_2_SIZE	SZ_6G /* 6GB */
++
++#define CFG_SYS_SECURE_SDRAM_BASE	0x8A000000 /* Secure DDR region for A55, SPL could use first 2MB */
++#define CFG_SYS_SECURE_SDRAM_SIZE	0x06000000
++
++#define WDOG_BASE_ADDR	WDG3_BASE_ADDR
++
++#endif
+-- 
+2.53.0
+

@@ -1,0 +1,27 @@
+From 3067c77454a4714d2a505a447696c2e9c9368c5b Mon Sep 17 00:00:00 2001
+From: Peter Lundkvist <peter.lundkvist@hectronic.se>
+Date: Wed, 22 Oct 2025 10:56:17 +0200
+Subject: [PATCH 3/5] drm/bridge: ti-sn65dsi83: Increase delay after reset to
+ 100 ms
+Upstream-Status: Pending
+
+---
+ drivers/gpu/drm/bridge/ti-sn65dsi83.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/bridge/ti-sn65dsi83.c b/drivers/gpu/drm/bridge/ti-sn65dsi83.c
+index 57a7ed13f996..7e4766f2c5ef 100644
+--- a/drivers/gpu/drm/bridge/ti-sn65dsi83.c
++++ b/drivers/gpu/drm/bridge/ti-sn65dsi83.c
+@@ -346,7 +346,7 @@ static void sn65dsi83_atomic_pre_enable(struct drm_bridge *bridge,
+ 
+ 	/* Deassert reset */
+ 	gpiod_set_value_cansleep(ctx->enable_gpio, 1);
+-	usleep_range(10000, 11000);
++	usleep_range(100000, 101000);
+ 
+ 	/* Get the LVDS format from the bridge state. */
+ 	bridge_state = drm_atomic_get_new_bridge_state(state, bridge);
+-- 
+2.53.0
+
