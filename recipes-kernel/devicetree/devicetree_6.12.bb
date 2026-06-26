@@ -10,7 +10,8 @@ COMPATIBLE_MACHINE = "^(h6095.*|h6099.*)$"
 
 SRCBRANCH="linux-6.12.y"
 SRCREV = "72d2e3fcf61a71ffbdc9e38cc61cbacf3f8fdff0"
-SRC_URI = "https://github.com/hectronic-sw/hectronic-devicetree;branch=${SRCBRANCH};protocol=ssh"
+SRC_URI = "git://github.com/hectronic-sw/hectronic-devicetree;branch=${SRCBRANCH};protocol=https"
+SRC_URI[sha256sum] = "9d541a497a3739d9b3911650dbef8fd7393291d449ed2a11d9e3c3d564f26b1d"
 
 DT_FILES_PATH = "${S}/git/arm64/freescale"
 DT_FILES:h6095 = " \
