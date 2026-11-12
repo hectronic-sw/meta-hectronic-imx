@@ -8,6 +8,7 @@ SRC_URI += " \
 	file://0005-backlight-Add-driver-for-TI-LP8863-LED-backlight-dri.patch \
 	file://0006-disable-eth-led-blink.patch \
 	file://0007-add-usbhub-2422-support.patch \
+	file://0008-add-fxl6408-irq-support.patch \
 	file://enable-ramdisk.cfg \
 	file://enable-devices.cfg \
 "

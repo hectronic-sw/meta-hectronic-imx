@@ -1,0 +1,104 @@
+Upstream-Status: Pending
+
+diff -Naur linux-lf-6.18.37-2.1.0.org/drivers/gpio/gpio-fxl6408.c linux-lf-6.18.37-2.1.0.fxl/drivers/gpio/gpio-fxl6408.c
+--- linux-lf-6.18.37-2.1.0.org/drivers/gpio/gpio-fxl6408.c	2026-10-02 09:19:09.745230935 +0200
++++ linux-lf-6.18.37-2.1.0.fxl/drivers/gpio/gpio-fxl6408.c	2026-11-12 19:20:45.628657536 +0100
+@@ -30,8 +30,11 @@
+ /* Bits here make the output High-Z, instead of the OUTPUT value. */
+ #define FXL6408_REG_OUTPUT_HIGH_Z	0x07
+ 
++#define FXL6408_REG_INPUT_DEFAULT_STATE	0x09
++
+ /* Returns the current status (1 = HIGH) of the input pins. */
+ #define FXL6408_REG_INPUT_STATUS	0x0f
++#define FXL6408_REG_INT_MASK		0x11
+ 
+ /*
+  * Return the current interrupt status
+@@ -46,18 +49,25 @@
+ static const struct regmap_range rd_range[] = {
+ 	{ FXL6408_REG_DEVICE_ID, FXL6408_REG_DEVICE_ID },
+ 	{ FXL6408_REG_IO_DIR, FXL6408_REG_OUTPUT },
++	{ FXL6408_REG_INPUT_DEFAULT_STATE, FXL6408_REG_INPUT_DEFAULT_STATE },
+ 	{ FXL6408_REG_INPUT_STATUS, FXL6408_REG_INPUT_STATUS },
++	{ FXL6408_REG_INT_MASK, FXL6408_REG_INT_MASK },
++	{ FXL6408_REG_INT_STS, FXL6408_REG_INT_STS },
+ };
+ 
+ static const struct regmap_range wr_range[] = {
+ 	{ FXL6408_REG_DEVICE_ID, FXL6408_REG_DEVICE_ID },
+ 	{ FXL6408_REG_IO_DIR, FXL6408_REG_OUTPUT },
+ 	{ FXL6408_REG_OUTPUT_HIGH_Z, FXL6408_REG_OUTPUT_HIGH_Z },
++	{ FXL6408_REG_INPUT_DEFAULT_STATE, FXL6408_REG_INPUT_DEFAULT_STATE },
++	{ FXL6408_REG_INT_MASK, FXL6408_REG_INT_MASK },
++	{ FXL6408_REG_INT_STS, FXL6408_REG_INT_STS },
+ };
+ 
+ static const struct regmap_range volatile_range[] = {
+ 	{ FXL6408_REG_DEVICE_ID, FXL6408_REG_DEVICE_ID },
+ 	{ FXL6408_REG_INPUT_STATUS, FXL6408_REG_INPUT_STATUS },
++	{ FXL6408_REG_INT_STS, FXL6408_REG_INT_STS },
+ };
+ 
+ static const struct regmap_access_table rd_table = {
+@@ -75,6 +85,47 @@
+ 	.n_yes_ranges = ARRAY_SIZE(volatile_range),
+ };
+ 
++static const unsigned int fxl6408_irq_config_base[] = {
++	FXL6408_REG_INPUT_DEFAULT_STATE,
++};
++
++#define FXL6408_IRQ(_id) {					\
++	.reg_offset = 0,					\
++	.mask = BIT(_id),					\
++	.type = {						\
++		.type_reg_offset = 0,				\
++		.type_reg_mask = BIT(_id),			\
++		.type_rising_val = 0,				\
++		.type_falling_val = BIT(_id),			\
++		.types_supported = IRQ_TYPE_EDGE_RISING |	\
++		IRQ_TYPE_EDGE_FALLING,	\
++	},							\
++}
++
++static const struct regmap_irq fxl6408_irqs[] = {
++	FXL6408_IRQ(0),
++	FXL6408_IRQ(1),
++	FXL6408_IRQ(2),
++	FXL6408_IRQ(3),
++	FXL6408_IRQ(4),
++	FXL6408_IRQ(5),
++	FXL6408_IRQ(6),
++	FXL6408_IRQ(7),
++};
++
++static struct regmap_irq_chip fxl6408_irq_chip = {
++	.name = "fxl6408",
++	.status_base = FXL6408_REG_INT_STS,
++	.mask_base = FXL6408_REG_INT_MASK,
++	.config_base = fxl6408_irq_config_base,
++	.num_regs = 1,
++	.num_config_bases = 1,
++	.num_config_regs = 1,
++	.irqs = fxl6408_irqs,
++	.num_irqs = ARRAY_SIZE(fxl6408_irqs),
++	.clear_on_unmask = true,
++};
++
+ static const struct regmap_config regmap = {
+ 	.reg_bits = 8,
+ 	.val_bits = 8,
+@@ -114,6 +165,12 @@
+ 		.ngpio_per_reg = FXL6408_NGPIO,
+ 	};
+ 
++	if (client->irq > 0) {
++		gpio_config.regmap_irq_chip = &fxl6408_irq_chip;
++		gpio_config.regmap_irq_line = client->irq;
++		gpio_config.regmap_irq_flags = IRQF_ONESHOT | IRQF_SHARED;
++	}
++
+ 	gpio_config.regmap = devm_regmap_init_i2c(client, &regmap);
+ 	if (IS_ERR(gpio_config.regmap))
+ 		return dev_err_probe(dev, PTR_ERR(gpio_config.regmap),
