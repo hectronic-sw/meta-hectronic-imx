@@ -1,0 +1,554 @@
+From aba95cb936028895ea7b7f730e106fcdd968a8d2 Mon Sep 17 00:00:00 2001
+From: Jonas Antoni <jonas.antoni@hectronic.se>
+Date: Mon, 12 Oct 2026 17:57:41 +0200
+Subject: [PATCH 1/3] Add memid support
+Upstream-Status: Pending
+
+Adding additional information for every registry entry, wether it should
+be applied to a memory configuration or not.
+---
+ oei/ddr/ddr.h          | 17 ++++++++-----
+ oei/ddr/ddr_init.c     | 39 ++++++++++++++++++++++------
+ oei/ddr/ddrphy_qb.c    | 17 ++++++++-----
+ oei/ddr/ddrphy_train.c | 25 ++++++++++--------
+ oei/ddr/ddrphy_utils.c | 11 +++++---
+ oei/ddr/helper.c       | 58 +++++++++++++++++++++++++++---------------
+ oei/ddr/main.c         |  9 ++++++-
+ 7 files changed, 119 insertions(+), 57 deletions(-)
+
+diff --git a/oei/ddr/ddr.h b/oei/ddr/ddr.h
+index 2b6dae3..9929ebd 100644
+--- a/oei/ddr/ddr.h
++++ b/oei/ddr/ddr.h
+@@ -69,12 +69,14 @@ struct ddrc_cfg_param
+ {
+     unsigned int reg;
+     unsigned int val;
++    unsigned char memid;
+ };
+ 
+ struct __attribute__((__packed__)) ddrphy_cfg_param
+ {
+     unsigned int   reg;
+     unsigned short val;
++    unsigned char memid;
+ };
+ 
+ struct dram_fsp_cfg
+@@ -139,15 +141,16 @@ struct dram_timing_info
+ extern struct dram_timing_info dram_timing;
+ 
+ enum sdram_type Ddrc_Get_Sdram_Type(void);
+-int Ddrc_Init(struct dram_timing_info *timing_info, uint32_t img_id);
+-int Ddr_Cfg_Phy(struct dram_timing_info *timing_info);
++int Ddrc_Init(struct dram_timing_info *timing_info, uint32_t img_id, uint32_t memid);
++int Ddr_Cfg_Phy(struct dram_timing_info *timing_info, int check_only, uint32_t memid);
++int Ddr_FindMem(void);
+ 
+ /* utils function for ddr phy training */
+-int Wait_Ddr_Phy_Training_Complete(void);
++int Wait_Ddr_Phy_Training_Complete(int check_only);
+ void Ddr_Phy_Init_Set_Dfi_Clk(unsigned int drate, bool ssc);
+ void Ddr_Phy_Init_Read_Msg_Block(void);
+-void Ddr_Phy_Cfg_Set(struct ddrphy_cfg_param *cfg, unsigned int num);
+-void Ddr_Cfg_Save(struct dram_timing_info *dtiming);
++void Ddr_Phy_Cfg_Set(struct ddrphy_cfg_param *cfg, unsigned int num, uint32_t memid);
++void Ddr_Cfg_Save(struct dram_timing_info *dtiming, uint32_t memid);
+ void Ddr_Phy_Trained_Csr_Save(void);
+ 
+ #define Ddrphy_AddrRemap(paddr_apb_from_ctlr)    (paddr_apb_from_ctlr << 2)
+@@ -234,7 +237,7 @@ typedef struct
+  */
+ struct ddr_phy_ops
+ {
+-    void (*ddr_pre_load_firmware)(struct dram_fsp_msg *fsp_msg, enum mem_type type, enum ddrfw_type fw);
++    void (*ddr_pre_load_firmware)(struct dram_fsp_msg *fsp_msg, enum mem_type type, enum ddrfw_type fw, uint32_t memid);
+     void (*ddr_do_load_firmware)(enum mem_type type);
+     void (*ddr_post_load_firmware)(enum mem_type type);
+     void (*ddr_load_DMEM)(uint16_t *msg_blk, ddrphy_qb_state *qb_state);
+@@ -243,7 +246,7 @@ struct ddr_phy_ops
+ 
+ extern struct ddr_phy_ops phy_ops;
+ 
+-int Ddr_Cfg_Phy_Qb(struct dram_timing_info *timing_info, uint32_t fsp_id, uint32_t img_id);
++int Ddr_Cfg_Phy_Qb(struct dram_timing_info *timing_info, uint32_t fsp_id, uint32_t img_id, uint32_t memid);
+ void Ddr_Phy_Qb_Save(void);
+ 
+ /*
+diff --git a/oei/ddr/ddr_init.c b/oei/ddr/ddr_init.c
+index 96219cb..3c3cfc2 100644
+--- a/oei/ddr/ddr_init.c
++++ b/oei/ddr/ddr_init.c
+@@ -47,7 +47,7 @@ static bool Check_Dfi_Init_Complete(void)
+     return true;
+ }
+ 
+-int Ddrc_Config(struct dram_timing_info *dtiming, uint32_t fsp_id)
++int Ddrc_Config(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t memid)
+ {
+     uint32_t i = 0, num = dtiming->ddrc_cfg_num;
+     struct ddrc_cfg_param *ddrc_cfg;
+@@ -57,7 +57,9 @@ int Ddrc_Config(struct dram_timing_info *dtiming, uint32_t fsp_id)
+     /* common DDRC config */
+     for (i = 0; i < num; i++, ddrc_cfg++)
+     {
+-        Write32(ddrc_cfg->reg, ddrc_cfg->val);
++        if (ddrc_cfg->memid & memid) {
++            Write32(ddrc_cfg->reg, ddrc_cfg->val);
++	}
+     }
+ 
+     if (dtiming->fsp_cfg == NULL || fsp_id >= dtiming->fsp_cfg_num)
+@@ -87,7 +89,9 @@ int Ddrc_Config(struct dram_timing_info *dtiming, uint32_t fsp_id)
+ 
+         for (i = 0; i < num; i++, ddrc_cfg++)
+         {
+-            Write32(ddrc_cfg->reg, ddrc_cfg->val);
++            if (ddrc_cfg->memid & memid) {
++                Write32(ddrc_cfg->reg, ddrc_cfg->val);
++            }
+         }
+     }
+ 
+@@ -169,7 +173,7 @@ enum sdram_type Ddrc_Get_Sdram_Type(void)
+     return type;
+ }
+ 
+-int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
++int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id, uint32_t memid)
+ {
+     int ret = 0;
+     uint32_t fsp_id, drate;
+@@ -198,7 +202,7 @@ int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
+ 
+ #if (!defined(DDR_NO_PHY))
+     /** Try to configure PHY in QuickBoot mode */
+-    qb_ret = Ddr_Cfg_Phy_Qb(dtiming, fsp_id, img_id);
++    qb_ret = Ddr_Cfg_Phy_Qb(dtiming, fsp_id, img_id, memid);
+     if (qb_ret < 0)
+     {
+         /** QuckBoot flow failure, return error */
+@@ -230,7 +234,7 @@ int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
+          * Start PHY initialization and training by
+          * accessing relevant PUB registers
+          */
+-        ret = Ddr_Cfg_Phy(dtiming);
++        ret = Ddr_Cfg_Phy(dtiming, 0, memid);
+         if (ret) { return ret; }
+ 
+         /* CSR bus: MCU/PIE/DMA++,TDR/APB-- */
+@@ -323,7 +327,7 @@ int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
+ #endif
+ 
+     /* save the ddr info for retention */
+-    Ddr_Cfg_Save(dtiming);
++    Ddr_Cfg_Save(dtiming, memid);
+ 
+ #if (!defined(DDR_NO_PHY))
+     /* save the ddr PHY trained CSR for retention */
+@@ -331,7 +335,7 @@ int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
+ #endif
+ 
+     /* program the ddrc registers */
+-    Ddrc_Config(dtiming, fsp_id);
++    Ddrc_Config(dtiming, fsp_id, memid);
+ 
+     Check_Dfi_Init_Complete();
+ 
+@@ -388,6 +392,25 @@ int Ddrc_Init(struct dram_timing_info *dtiming, uint32_t img_id)
+     return ret;
+ }
+ 
++/**
++ */
++int Ddr_FindMem(void)
++{
++    size_t i;
++
++    /* Find correct memory to train */
++    for (i = 0; i < 2; i++) {
++	Ddr_MixPowerUp();
++        Ddr_PhyColdReset();
++
++        if (Ddr_Cfg_Phy(&dram_timing, 1, 0x01 << i) == 0) {
++	    return i;
++	}
++    }
++
++    return -1;
++}
++
+ #if (!defined(DDR_NO_PHY))
+ /*--------------------------------------------------------------------------*/
+ /* Divide and round (up or down) function                                   */
+diff --git a/oei/ddr/ddrphy_qb.c b/oei/ddr/ddrphy_qb.c
+index 0cca1d5..1d0db42 100644
+--- a/oei/ddr/ddrphy_qb.c
++++ b/oei/ddr/ddrphy_qb.c
+@@ -25,7 +25,7 @@ static void Ddr_Phy_Delay40(unsigned int drate)
+ #endif
+ }
+ 
+-static void ddrphy_prepare_mb(uint16_t *mb, struct dram_fsp_msg *fsp_msg)
++static void ddrphy_prepare_mb(uint16_t *mb, struct dram_fsp_msg *fsp_msg, uint32_t memid)
+ {
+ 	uint32_t i, idx;
+ 	struct ddrphy_cfg_param *cfg;
+@@ -35,6 +35,9 @@ static void ddrphy_prepare_mb(uint16_t *mb, struct dram_fsp_msg *fsp_msg)
+ 
+ 	cfg = fsp_msg->fsp_phy_msgh_cfg;
+ 	for (i = 0; i < fsp_msg->fsp_phy_msgh_cfg_num; i++, cfg++) {
++		if ((cfg->memid & memid) == 0) {
++			continue;
++		}
+ 		if ((cfg->reg & 0xff000) != DMEM_OFFSET_ADDR)
+ 			continue;
+ 		idx = (cfg->reg & 0xfff);
+@@ -107,13 +110,13 @@ static void ddrphy_qb_restore_lp5(MSB_DDR5_t *msb, ddrphy_qb_state *qb_state)
+     msb->MR30_B1 = qb_state->TrainedDRAMDCA_B1;
+ }
+ 
+-static int ddrphy_qb_restore(uint16_t *mb, struct dram_fsp_msg *fsp_msg, ddrphy_qb_state *qb_state)
++static int ddrphy_qb_restore(uint16_t *mb, struct dram_fsp_msg *fsp_msg, ddrphy_qb_state *qb_state, uint32_t memid)
+ {
+     enum sdram_type type;
+ 
+     memset(mb, 0, (DDRPHY_QB_MSB_SIZE * sizeof(*mb)));
+ 
+-    ddrphy_prepare_mb(mb, fsp_msg);
++    ddrphy_prepare_mb(mb, fsp_msg, memid);
+ 
+     type = Ddrc_Get_Sdram_Type();
+ 
+@@ -144,7 +147,7 @@ static void ddrphy_qb_pstate_sram_restore(ddrphy_qb_state *qb_state)
+ #define PUB2_xx	1
+ #define PUB2_30	1
+ 
+-int Ddr_Cfg_Phy_Qb(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t img_id)
++int Ddr_Cfg_Phy_Qb(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t img_id, uint32_t memid)
+ {
+ 	struct dram_fsp_msg *fsp_msg;
+ 	ddrphy_qb_state *qb_state;
+@@ -164,7 +167,7 @@ int Ddr_Cfg_Phy_Qb(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t i
+ 	 * check is triggered, therefore MSB must be restored before triggering training data
+ 	 * check
+ 	 */
+-	ddrphy_qb_restore(mb, fsp_msg, qb_state);
++	ddrphy_qb_restore(mb, fsp_msg, qb_state, memid);
+ 
+ 	/** Trigger non-blocking QB training data check */
+ 	valid = Ddr_Training_Data_Check_Init();
+@@ -201,7 +204,7 @@ int Ddr_Cfg_Phy_Qb(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t i
+ 	ts = SYSCTR_GetUsec64();
+ #endif
+ 	/** 3.2.4 Step D Load QuickBoot IMEM */
+-	phy_ops.ddr_pre_load_firmware(NULL, IMEM, DDRFW_QUICKBOOT);
++	phy_ops.ddr_pre_load_firmware(NULL, IMEM, DDRFW_QUICKBOOT, memid);
+ 	phy_ops.ddr_do_load_firmware(IMEM);
+ 
+ 	/** 3.2.5 Step F Load QuickBoot DMEM */
+@@ -240,7 +243,7 @@ int Ddr_Cfg_Phy_Qb(struct dram_timing_info *dtiming, uint32_t fsp_id, uint32_t i
+ 	 * returns 0 on success,
+ 	 *        -1 in case of error
+ 	 */
+-	ret = Wait_Ddr_Phy_Training_Complete();
++	ret = Wait_Ddr_Phy_Training_Complete(0);
+ 	if (ret < 0)
+ 	{
+ 		return ret;
+diff --git a/oei/ddr/ddrphy_train.c b/oei/ddr/ddrphy_train.c
+index b9e9a8d..413a350 100644
+--- a/oei/ddr/ddrphy_train.c
++++ b/oei/ddr/ddrphy_train.c
+@@ -23,7 +23,7 @@ static void Ddr_Phy_Delay40(unsigned int drate)
+ #endif
+ }
+ 
+-int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
++int Ddr_Cfg_Phy(struct dram_timing_info *dtiming, int check_only, uint32_t memid)
+ {
+     struct dram_fsp_msg *fsp_msg;
+     unsigned int i;
+@@ -34,7 +34,7 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+ 
+     /* initialize PHY configuration */
+     /* config phy common reg */
+-    Ddr_Phy_Cfg_Set(dtiming->ddrphy_cfg, dtiming->ddrphy_cfg_num);
++    Ddr_Phy_Cfg_Set(dtiming->ddrphy_cfg, dtiming->ddrphy_cfg_num, memid);
+ 
+ #ifdef DEBUG
+     ts = SYSCTR_GetUsec64();
+@@ -43,7 +43,7 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+     if (!dtiming->skip_fw)
+     {
+         /** 3.2.4 Step D Load QuickBoot IMEM */
+-        phy_ops.ddr_pre_load_firmware(NULL, IMEM, DDRFW_TRAINING);
++        phy_ops.ddr_pre_load_firmware(NULL, IMEM, DDRFW_TRAINING, memid);
+         phy_ops.ddr_do_load_firmware(IMEM);
+     }
+ 
+@@ -53,7 +53,7 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+     {
+         /* If NumPStates more than 2, StartPsloop "DMA reload" prepare no action required */
+         /* config phy pstate reg */
+-        Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_cfg, fsp_msg->fsp_phy_cfg_num);
++        Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_cfg, fsp_msg->fsp_phy_cfg_num, memid);
+ 
+         /* If NumPStates more than 2, stopPsloop "DMA reload" prepare
+          * action is included in end of fsp_phy_cfg  */
+@@ -63,11 +63,11 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+             /* prog_csr for one time */
+             if (i == 0)
+             {
+-                Ddr_Phy_Cfg_Set(dtiming->ddrphy_prog_csr, dtiming->ddrphy_prog_csr_num);
++                Ddr_Phy_Cfg_Set(dtiming->ddrphy_prog_csr, dtiming->ddrphy_prog_csr_num, memid);
+             }
+ 
+             /* prog_csr ps */
+-            Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_prog_csr_ps_cfg, fsp_msg->fsp_phy_prog_csr_ps_cfg_num);
++            Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_prog_csr_ps_cfg, fsp_msg->fsp_phy_prog_csr_ps_cfg_num, memid);
+             /* If NumPStates more than 2, stopPsloop "DMA reload" prepare
+              * action is included in end of fsp_phy_prog_csr_ps_cfg  */
+         }
+@@ -83,7 +83,7 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+             Ddr_Phy_Init_Set_Dfi_Clk(fsp_msg->drate, fsp_msg->ssc);
+ 
+             /* load the dram training firmware image */
+-            phy_ops.ddr_pre_load_firmware(fsp_msg, DMEM, DDRFW_TRAINING);
++            phy_ops.ddr_pre_load_firmware(fsp_msg, DMEM, DDRFW_TRAINING, memid);
+             phy_ops.ddr_do_load_firmware(DMEM);
+             phy_ops.ddr_post_load_firmware(DMEM);
+ #ifdef DEBUG
+@@ -114,9 +114,14 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+             Dwc_Ddrphy_Apb_Wr(0xd0099, 0x0);
+ 
+             /* Wait for the training firmware to complete */
+-            ret = Wait_Ddr_Phy_Training_Complete();
++            ret = Wait_Ddr_Phy_Training_Complete(check_only);
+             if (ret) { return ret; }
+ 
++            if (check_only)
++            {
++                return 0;
++            }
++
+             /* Halt the microcontroller. */
+             Dwc_Ddrphy_Apb_Wr(0xd0099, 0x1);
+             Ddr_Phy_Delay40(fsp_msg->drate);
+@@ -133,14 +138,14 @@ int Ddr_Cfg_Phy(struct dram_timing_info *dtiming)
+ 
+         /* If NumPStates more than 2, resumePsloop "DMA reload" prepare resume, no action */
+         /* config PIE pstate reg */
+-        Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_pie_cfg, fsp_msg->fsp_phy_pie_cfg_num);
++        Ddr_Phy_Cfg_Set(fsp_msg->fsp_phy_pie_cfg, fsp_msg->fsp_phy_pie_cfg_num, memid);
+         /* If NumPStates more than 2, "DMA reload" prepare end, prepare Xlat Table for this PState */
+         /* action is included in end of fsp_phy_pie_cfg */
+         fsp_msg++;
+     }
+ 
+     /* Load PHY Init Engine Image */
+-    Ddr_Phy_Cfg_Set(dtiming->ddrphy_pie, dtiming->ddrphy_pie_num);
++    Ddr_Phy_Cfg_Set(dtiming->ddrphy_pie, dtiming->ddrphy_pie_num, memid);
+ 
+     Dwc_Ddrphy_Apb_Wr(0xd0000, 0x1); /* CSR bus: MCU/PIE/DMA++,TDR/APB-- */
+ 
+diff --git a/oei/ddr/ddrphy_utils.c b/oei/ddr/ddrphy_utils.c
+index 5b696fa..ab49601 100644
+--- a/oei/ddr/ddrphy_utils.c
++++ b/oei/ddr/ddrphy_utils.c
+@@ -77,7 +77,7 @@ static inline void Decode_Streaming_Message(void)
+     }
+ }
+ 
+-int Wait_Ddr_Phy_Training_Complete(void)
++int Wait_Ddr_Phy_Training_Complete(int check_only)
+ {
+     unsigned int mail;
+ 
+@@ -96,6 +96,9 @@ int Wait_Ddr_Phy_Training_Complete(void)
+             /** Training FAILED */
+             return -1;
+         default:
++            if (check_only) {
++                return 0;
++            }
+             break;
+         }
+     }
+@@ -136,13 +139,15 @@ void Ddr_Phy_Init_Set_Dfi_Clk(unsigned int drate, bool ssc)
+     }
+ }
+ 
+-void Ddr_Phy_Cfg_Set(struct ddrphy_cfg_param *cfg, unsigned int num)
++void Ddr_Phy_Cfg_Set(struct ddrphy_cfg_param *cfg, unsigned int num, uint32_t memid)
+ {
+     unsigned int i;
+ 
+     for (i = 0; i < num; i++, cfg++)
+     {
+-        Dwc_Ddrphy_Apb_Wr(cfg->reg, cfg->val);
++        if (cfg->memid & memid) {
++            Dwc_Ddrphy_Apb_Wr(cfg->reg, cfg->val);
++        }
+     }
+ }
+ 
+diff --git a/oei/ddr/helper.c b/oei/ddr/helper.c
+index 719bd3b..3200134 100644
+--- a/oei/ddr/helper.c
++++ b/oei/ddr/helper.c
+@@ -24,15 +24,20 @@ extern char s_code_end[];
+  * @cfg_id: config index
+  * @val: ddrphy config parameter
+  */
+-static void Check_Cfg_Id(struct dram_fsp_msg *fsp_msg, uint32_t reg, uint32_t *cfg_id, uint16_t *val)
++static void Check_Cfg_Id(struct dram_fsp_msg *fsp_msg, uint32_t reg, uint32_t *cfg_id, uint16_t *val, uint32_t memid)
+ {
+     struct ddrphy_cfg_param *cfg = fsp_msg->fsp_phy_msgh_cfg;
+     uint32_t cfg_num = fsp_msg->fsp_phy_msgh_cfg_num;
+-    uint32_t id = (*cfg_id);
++    uint32_t id;
+ 
+-    while (id < cfg_num && ((cfg[id].reg & 0xff000) != DMEM_OFFSET_ADDR || reg > cfg[id].reg))
+-    {
+-        id++;
++    for (id = (*cfg_id); id < cfg_num; id++) {
++        if ((cfg[id].memid & memid) == 0) {
++            continue;
++        }
++
++        if (! ((cfg[id].reg & 0xff000) != DMEM_OFFSET_ADDR || reg > cfg[id].reg)) {
++            break;
++	}
+     }
+ 
+     *val = (id == cfg_num || reg < cfg[id].reg ? 0 : cfg[id].val);
+@@ -97,7 +102,7 @@ static void Start_Edma_Transfer(enum mem_type type)
+  * @fsp_msg: ddr fsp traing info
+  * @type: memory type IMEM/DMEM
+  */
+-static void Edma_Ddr_Load_Train_Firmware(struct dram_fsp_msg *fsp_msg, enum mem_type type, enum ddrfw_type fw_type)
++static void Edma_Ddr_Load_Train_Firmware(struct dram_fsp_msg *fsp_msg, enum mem_type type, enum ddrfw_type fw_type, uint32_t memid)
+ {
+     int ret;
+     uint32_t fw_num, edma_ch;
+@@ -132,7 +137,7 @@ static void Edma_Ddr_Load_Train_Firmware(struct dram_fsp_msg *fsp_msg, enum mem_
+         cfg_id = 0;
+         for ( ; i < DDRPHY_QB_MSB_SIZE; i++, pr_to32++)
+         {
+-            Check_Cfg_Id(fsp_msg, pr_to32, &cfg_id, &val);
++            Check_Cfg_Id(fsp_msg, pr_to32, &cfg_id, &val, memid);
+             Write16(DDR_PHY_BASE + Ddrphy_AddrRemap(pr_to32), val);
+             fw += sizeof(val);
+         }
+@@ -253,26 +258,30 @@ void Edma_Copy_Data(uint32_t src_addr, uint32_t src_tbytes,
+ 
+ extern char __RetentionStart[], __RetentionEnd[];
+ 
+-void Ddr_Cfg_Save(struct dram_timing_info *dtiming)
++void Ddr_Cfg_Save(struct dram_timing_info *dtiming, uint32_t memid)
+ {
+     struct ddr_info* ddr = (struct ddr_info*)((void *)__RetentionStart);
+-    unsigned int i, j;
++    unsigned int i, j, k;
+ 
+     /* zero init the 64K buffer to avoid ECC errors */
+     memset(ddr, 0, (uint32_t)(__RetentionEnd) - (uint32_t)(__RetentionStart));
+ 
+     /* ddrc config next after the ddr_into struct */
+     ddr->ddrc_cfg = (struct ddrc*)((unsigned int)ddr + sizeof(struct ddr_info));
+-    /* number of ddr registers */
+-    ddr->ddrc_cfg_num = dtiming->ddrc_cfg_num;
+ 
+     /* save register address and value */
+-    for (i = 0; i < ddr->ddrc_cfg_num; i++)
++    for (i = 0, j = 0; i < dtiming->ddrc_cfg_num; i++)
+     {
+-        ddr->ddrc_cfg[i].reg = dtiming->ddrc_cfg[i].reg;
+-        ddr->ddrc_cfg[i].val = dtiming->ddrc_cfg[i].val;
++	if (dtiming->ddrc_cfg[i].memid & memid) {
++            ddr->ddrc_cfg[j].reg = dtiming->ddrc_cfg[i].reg;
++            ddr->ddrc_cfg[j].val = dtiming->ddrc_cfg[i].val;
++	    j++;
++	}
+     }
+ 
++    /* number of ddr registers */
++    ddr->ddrc_cfg_num = j;
++
+     /* number of pstates */
+     ddr->pstate_num = dtiming->fsp_cfg_num;
+     /* pstate struct is after ddrc_cfg */
+@@ -294,24 +303,31 @@ void Ddr_Cfg_Save(struct dram_timing_info *dtiming)
+         }
+ 
+         /* save pstate specific register address and value */
+-        for (i = 0; i < ddr->pstate[j].cfg_num; i++)
++        for (i = 0, k = 0; i < dtiming->fsp_cfg[j].ddrc_cfg_num; i++)
+         {
+-            ddr->pstate[j].cfg[i].reg = dtiming->fsp_cfg[j].ddrc_cfg[i].reg;
+-            ddr->pstate[j].cfg[i].val = dtiming->fsp_cfg[j].ddrc_cfg[i].val;
++	    if (dtiming->fsp_cfg[j].ddrc_cfg[i].memid & memid) {
++                ddr->pstate[j].cfg[k].reg = dtiming->fsp_cfg[j].ddrc_cfg[i].reg;
++                ddr->pstate[j].cfg[k].val = dtiming->fsp_cfg[j].ddrc_cfg[i].val;
++		k++;
++	    }
+         }
++        ddr->pstate[j].cfg_num = k;
+     }
+ 
+-    /* save number of trained phy config registers */
+-    ddr->ddrphy_trained_csr_num = dtiming->ddrphy_trained_csr_num;
+     /* skip last pstate struct */
+     ddr->trained_csr = (struct ddrphy *)((unsigned int)ddr->pstate[ddr->pstate_num-1].cfg + (ddr->pstate[ddr->pstate_num-1].cfg_num * sizeof(struct ddrc)));
+ 
+     /* save ddrphy trained csr registers only, value will be saved after phy training completes */
+-    for (i = 0; i < ddr->ddrphy_trained_csr_num; i++)
++    for (i = 0, j = 0; i < dtiming->ddrphy_trained_csr_num; i++)
+     {
+-        ddr->trained_csr[i].reg = dtiming->ddrphy_trained_csr[i].reg;
++	if (dtiming->ddrphy_trained_csr[i].memid & memid) {
++            ddr->trained_csr[j++].reg = dtiming->ddrphy_trained_csr[i].reg;
++	}
+     }
+ 
++    /* save number of trained phy config registers */
++    ddr->ddrphy_trained_csr_num = j;
++
+     /* save pstate frequencies */
+     for (i = 0; i < ddr->pstate_num; i++)
+     {
+diff --git a/oei/ddr/main.c b/oei/ddr/main.c
+index 5eca010..7b199d4 100644
+--- a/oei/ddr/main.c
++++ b/oei/ddr/main.c
+@@ -68,6 +68,7 @@ int oei_main(uint32_t argc, uint32_t *argv)
+ #if !defined(DEBUG)
+     uint32_t ts, te, *tdiff;
+ #endif
++    uint8_t memid;
+ 
+     if (!timer_is_enabled())
+         timer_enable();
+@@ -97,6 +98,12 @@ int oei_main(uint32_t argc, uint32_t *argv)
+         id = argv[2];
+     }
+ 
++    ret = Ddr_FindMem();
++    if (ret < 0) {
++        printf("DDR OEI: No matching memory\n");
++    }
++    memid = 0x01 << ret;
++
+     Ddr_Pre_Init();
+ 
+     ret = Ddr_Load_Training_Data(offset);
+@@ -105,7 +112,7 @@ int oei_main(uint32_t argc, uint32_t *argv)
+         return OEI_FAIL;
+     }
+ 
+-    ret = Ddrc_Init(&dram_timing, id);
++    ret = Ddrc_Init(&dram_timing, id, memid);
+ 
+     Ddr_Post_Init();
+ 
